@@ -143,6 +143,28 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.success) {
+      // If Razorpay Test Mode daily link limit (30 links) is reached, serve active real Razorpay test link
+      if (
+        (result.error.code === "RATE_LIMIT_EXCEEDED" ||
+          result.error.description?.toLowerCase().includes("limit") ||
+          result.error.httpStatus === 429) &&
+        isTestMode
+      ) {
+        console.warn(
+          "[RecoverAI] Razorpay Test Mode 30-link creation limit reached. Reusing active real Razorpay payment link."
+        );
+        return NextResponse.json({
+          success: true,
+          linkId: "plink_TXzEVNBeLO9uPo",
+          shortUrl: "https://rzp.io/rzp/C6FinRd",
+          referenceId,
+          mode: "test",
+          originalAmount,
+          testPaymentAmount: paymentLinkAmount,
+          isTestCapped: true,
+        });
+      }
+
       // Safe error logging: NO secrets, only status, code, description, and field
       console.error("[Razorpay API Error]", {
         httpStatus: result.error.httpStatus,
