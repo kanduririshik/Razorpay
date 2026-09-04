@@ -59,7 +59,7 @@ export default function OrderTrackingPage() {
     {
       id: "ship",
       title: "Shipped",
-      description: "Dispatched with RecoverAI Express dedicated furniture transport.",
+      description: "Dispatched with Slander's Express dedicated furniture transport.",
       status: "upcoming",
       time: "Expected Tomorrow",
     },
@@ -214,7 +214,7 @@ export default function OrderTrackingPage() {
               <Truck className="w-4 h-4 text-amber-400" />
               <span>Carrier Service</span>
             </div>
-            <p className="text-slate-200 font-medium">RecoverAI White-Glove Logistics</p>
+            <p className="text-slate-200 font-medium">Slander&apos;s White-Glove Logistics</p>
             <p className="text-slate-400 text-[11px] leading-relaxed">
               Two-person room-of-choice placement and packaging haul-away included.
             </p>

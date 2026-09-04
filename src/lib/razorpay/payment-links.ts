@@ -59,6 +59,7 @@ export interface RazorpayPayment {
   captured: boolean;
   error_code: string | null;
   error_description: string | null;
+  error_reason?: string | null;
 }
 
 // ─── Create Payment Link ─────────────────────────────────────────────────────

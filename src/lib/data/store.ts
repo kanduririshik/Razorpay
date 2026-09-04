@@ -1291,3 +1291,14 @@ export function completeCustomerRecovery(paymentIdOrId: string) {
     updatedMetrics: calculateDashboardMetrics(state),
   };
 }
+
+export function verifyPaymentIssue(paymentIdOrId: string): boolean {
+  const state = getStoredState();
+  const cleanId = paymentIdOrId.trim();
+  const pay = state.payments.find((p) => p.id === cleanId || p.paymentId === cleanId);
+  if (!pay) return false;
+
+  pay.isVerified = true;
+  saveStoredState(state);
+  return true;
+}

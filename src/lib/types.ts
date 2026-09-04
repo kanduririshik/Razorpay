@@ -61,6 +61,8 @@ export interface PaymentData {
   razorpayLinkId?: string;
   razorpayShortUrl?: string;
   razorpayMode?: "live" | "test" | "simulation";
+  razorpayPaymentId?: string;
+  isVerified?: boolean;
   originalAmount?: number;
   testPaymentAmount?: number;
   customer?: CustomerData;

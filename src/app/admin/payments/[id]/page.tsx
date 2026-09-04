@@ -45,6 +45,7 @@ export default function AdminPaymentDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recoveryInitiated, setRecoveryInitiated] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
 
   // Auto-refresh when Razorpay payment is confirmed server-side
   useRazorpaySync({
@@ -61,6 +62,7 @@ export default function AdminPaymentDetailsPage() {
       const result = getPaymentById(paymentId);
       if (!result) throw new Error("Payment record not found");
       setData(result);
+      setIsVerified(Boolean(result.payment.isVerified));
 
       // Check if recovery is already in progress
       if (
@@ -156,15 +158,33 @@ export default function AdminPaymentDetailsPage() {
               <span>Open Customer Recovery Page</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </Link>
-          ) : (
+          ) : !isVerified ? (
             <button
-              onClick={handleStartRecovery}
-              disabled={isSimulating}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-accent to-ai-600 hover:from-brand-accent/90 hover:to-ai-600/90 text-white text-xs font-bold shadow-lg shadow-brand-accent/20 transition-all flex items-center space-x-2"
+              onClick={() => {
+                const { verifyPaymentIssue } = require("@/lib/data/store");
+                verifyPaymentIssue(payment.paymentId);
+                setIsVerified(true);
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all flex items-center space-x-2"
             >
-              <Zap className="w-3.5 h-3.5" />
-              <span>START RECOVERY</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-200" />
+              <span>Verify Payment Issue</span>
             </button>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <span className="px-3 py-1.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-mono rounded-xl flex items-center space-x-1.5 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                <span>Payment Issue Verified</span>
+              </span>
+              <button
+                onClick={handleStartRecovery}
+                disabled={isSimulating}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-accent to-ai-600 hover:from-brand-accent/90 hover:to-ai-600/90 text-white text-xs font-bold shadow-lg shadow-brand-accent/20 transition-all flex items-center space-x-2"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>START RECOVERY</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -288,7 +308,7 @@ export default function AdminPaymentDetailsPage() {
           <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
             <span className="text-slate-500 uppercase text-[10px] block">FAILURE REASON</span>
             <span className="font-semibold text-rose-300 block uppercase truncate">
-              {payment.failureReason || "INSUFFICIENT FUNDS"}
+              {payment.failureReason || "PAYMENT FAILED"}
             </span>
           </div>
         </div>

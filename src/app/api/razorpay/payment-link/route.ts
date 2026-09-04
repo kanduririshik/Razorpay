@@ -86,9 +86,9 @@ export async function POST(req: NextRequest) {
     // ── LIVE / TEST MODE: Create real Razorpay payment link ───────────────
     const isTestMode = config.keyId.startsWith("rzp_test_");
     const originalAmount = amount;
-    // In Razorpay Test Mode, unactivated accounts have a ₹15,000 limit per payment link.
-    // When in Test Mode and amount > ₹15,000, cap the test link to ₹1,000 while retaining ₹32,999 in RecoverAI.
-    const paymentLinkAmount = isTestMode && originalAmount > 15000 ? 1000 : originalAmount;
+    // In Razorpay Test Mode, our application applies a ₹1,000 test transaction cap.
+    // Original order value: ₹32,999. Actual Razorpay Test Mode transaction: ₹1,000.
+    const paymentLinkAmount = isTestMode && originalAmount > 1000 ? 1000 : originalAmount;
 
     const result = await createPaymentLink({
       amount: paymentLinkAmount,
@@ -97,8 +97,8 @@ export async function POST(req: NextRequest) {
       description:
         description ??
         (paymentLinkAmount !== originalAmount
-          ? `Razorpay Test Recovery for Order ${orderId} (Original: ₹${originalAmount.toLocaleString("en-IN")}) — RecoverAI`
-          : `Payment recovery for Order ${orderId} — RecoverAI`),
+          ? `Razorpay Test Mode — ₹1,000 test transaction. Original order value: ₹${originalAmount.toLocaleString("en-IN")}.`
+          : `Order #${orderId} payment — Slander's Furniture Store`),
       customerName,
       customerEmail,
       customerPhone: customerPhone.startsWith("+") ? customerPhone : `+91${customerPhone.replace(/\D/g, "")}`,

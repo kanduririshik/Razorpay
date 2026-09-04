@@ -21,7 +21,12 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { drainVerifiedRecoveries, getVerifiedRecovery } from "@/lib/razorpay/sync-buffer";
+import {
+  drainVerifiedRecoveries,
+  getVerifiedRecovery,
+  drainFailedPayments,
+  getFailedPayment,
+} from "@/lib/razorpay/sync-buffer";
 
 export const runtime = "nodejs";
 
@@ -31,17 +36,21 @@ export async function GET(req: NextRequest) {
 
   if (specificPaymentId) {
     // Check a specific payment without draining
-    const event = getVerifiedRecovery(specificPaymentId);
+    const recoveryEvent = getVerifiedRecovery(specificPaymentId);
+    const failedEvent = getFailedPayment(specificPaymentId);
     return NextResponse.json({
-      events: event ? [event] : [],
+      events: recoveryEvent ? [recoveryEvent] : [],
+      failedEvents: failedEvent ? [failedEvent] : [],
       timestamp: new Date().toISOString(),
     });
   }
 
   // Drain all events
   const events = drainVerifiedRecoveries();
+  const failedEvents = drainFailedPayments();
   return NextResponse.json({
     events,
+    failedEvents,
     timestamp: new Date().toISOString(),
   });
 }

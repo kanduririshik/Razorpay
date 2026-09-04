@@ -2,24 +2,23 @@
 
 import React, { Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useDemoData } from "@/context/DemoDataContext";
 import { formatINR } from "@/lib/utils";
 import {
   XCircle,
-  AlertTriangle,
-  ArrowRight,
   RotateCcw,
-  LayoutDashboard,
-  ShieldCheck,
-  Clock,
-  ExternalLink,
+  ShoppingBag,
+  Eye,
+  ShieldAlert,
 } from "lucide-react";
 
 function PaymentFailedContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const paymentId = searchParams.get("paymentId") || "PAY98231";
   const orderId = searchParams.get("orderId") || "RA98231";
+  const queryReason = searchParams.get("reason");
 
   const { getOrder, getPaymentById } = useDemoData();
   const order = getOrder(orderId);
@@ -27,11 +26,14 @@ function PaymentFailedContent() {
 
   const amount = order?.totalAmount || paymentQuery?.payment.amount || 32999;
   const failureReason =
-    order?.failureReason || paymentQuery?.payment.failureReason || "Insufficient Funds";
+    queryReason ||
+    order?.failureReason ||
+    paymentQuery?.payment.failureReason ||
+    "Payment was declined by the bank";
   const method = order?.paymentMethod || paymentQuery?.payment.method || "UPI";
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-14">
       {/* Failure Container */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 shadow-2xl space-y-8 text-center relative overflow-hidden">
         {/* Ambient background glow */}
@@ -45,16 +47,13 @@ function PaymentFailedContent() {
         {/* Title & Subtext */}
         <div className="space-y-2">
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-red-400">
-            Payment Failed
+            Slander&apos;s Furniture Store
           </span>
-          <h1 className="text-3xl sm:text-4xl font-serif font-bold text-white tracking-tight">
-            {formatINR(amount)}
+          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-white tracking-tight">
+            Payment could not be completed
           </h1>
-          <p className="text-sm font-semibold text-amber-300">
-            {order?.items[0]?.productName || "Modern 3-Seater Sofa"}
-          </p>
-          <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed pt-1">
-            Your payment could not be completed. We&apos;ve notified the merchant so they can help recover your payment.
+          <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed pt-1">
+            Your transaction was declined by the bank gateway. Your furniture reservation is still on hold.
           </p>
         </div>
 
@@ -71,50 +70,45 @@ function PaymentFailedContent() {
           </div>
 
           <div className="flex justify-between pb-2 border-b border-slate-800">
-            <span className="text-slate-500">Amount</span>
+            <span className="text-slate-500">Original Amount</span>
             <span className="font-bold text-white text-sm">{formatINR(amount)}</span>
           </div>
 
           <div className="flex justify-between pb-2 border-b border-slate-800">
-            <span className="text-slate-500">Payment Method</span>
-            <span className="text-slate-300 font-semibold">{method}</span>
+            <span className="text-slate-500">Actual Test Transaction</span>
+            <span className="font-semibold text-blue-300">₹1,000</span>
+          </div>
+
+          <div className="flex justify-between pb-2 border-b border-slate-800">
+            <span className="text-slate-500">Status</span>
+            <span className="font-semibold text-red-400">Payment Failed</span>
           </div>
 
           <div className="flex justify-between items-center pt-1">
-            <span className="text-slate-500">Reason</span>
-            <span className="px-2.5 py-0.5 rounded bg-red-500/20 text-red-300 font-semibold border border-red-500/30">
+            <span className="text-slate-500">Failure Reason</span>
+            <span className="px-2.5 py-1 rounded bg-red-500/20 text-red-300 font-semibold border border-red-500/30 text-right max-w-[200px] truncate" title={failureReason}>
               {failureReason}
             </span>
           </div>
         </div>
 
-        {/* Merchant Notification Verified Badge */}
-        <div className="max-w-md mx-auto p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center justify-center space-x-2 text-xs font-mono font-bold">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Merchant has been notified ✓</span>
-        </div>
-
-        {/* Action Buttons: Primary Continue Shopping, Secondary View Payment Details */}
+        {/* Action Buttons: Try Again, View Order */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Link
-            href="/shop"
-            className="w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs shadow-xl shadow-amber-500/20 transition-all hover:scale-[1.02] flex items-center justify-center space-x-2"
+            href="/checkout"
+            className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.02] flex items-center justify-center space-x-2"
           >
-            <span>Continue Shopping</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <RotateCcw className="w-4 h-4" />
+            <span>Try Again</span>
           </Link>
 
           <Link
-            href={`/admin/payments/${paymentId}`}
-            className="w-full sm:w-auto px-5 py-3.5 bg-slate-800 hover:bg-slate-700/90 border border-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-all flex items-center justify-center space-x-2"
+            href={`/order/${orderId}`}
+            className="w-full sm:w-auto px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs border border-slate-700 transition-colors flex items-center justify-center space-x-2"
           >
-            <LayoutDashboard className="w-3.5 h-3.5 text-brand-electric" />
-            <span>View Payment Details</span>
+            <Eye className="w-4 h-4 text-slate-400" />
+            <span>View Order</span>
           </Link>
-        </div>
-
-        <div className="text-[11px] text-slate-500 flex items-center justify-center space-x-1 font-mono">
-          <span>Order state preserved • Recovery assistance queued</span>
         </div>
       </div>
     </div>
@@ -125,8 +119,8 @@ export default function PaymentFailedPage() {
   return (
     <Suspense
       fallback={
-        <div className="max-w-3xl mx-auto px-4 py-16 text-center text-slate-500 font-mono text-sm">
-          Loading payment failure receipt...
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
         </div>
       }
     >

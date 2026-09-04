@@ -122,15 +122,15 @@ export default function CustomerRecoveryPage() {
         <div className="text-center space-y-2">
           <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
             <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-            <span>AUTONOMOUS RECOVERY DISPATCHED</span>
+            <span>SECURE PAYMENT LINK — SLANDER&apos;S FURNITURE STORE</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl font-serif font-bold text-white tracking-tight">
-            PAYMENT RECOVERY
+            COMPLETE YOUR ORDER
           </h1>
 
           <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
-            Your previous payment could not be completed. The merchant has provided a secure recovery option.
+            Your previous payment attempt was declined. Complete your payment below to confirm your furniture order.
           </p>
         </div>
 
@@ -174,16 +174,16 @@ export default function CustomerRecoveryPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono text-slate-400 pt-1">
             <div>
               <span className="text-slate-500 block">Merchant:</span>
-              <span className="text-white font-semibold">RecoverAI Furniture</span>
+              <span className="text-white font-semibold">Slander&apos;s Furniture Store</span>
             </div>
             <div>
-              <span className="text-slate-500 block">Reason:</span>
-              <span className="text-red-400 font-semibold">Insufficient Funds</span>
+              <span className="text-slate-500 block">Status:</span>
+              <span className="text-amber-400 font-semibold">{payment?.failureReason || "Payment Pending"}</span>
             </div>
             <div>
-              <span className="text-slate-500 block">Recovery Option:</span>
+              <span className="text-slate-500 block">Payment Method:</span>
               <span className="text-emerald-400 font-semibold">
-                {isRazorpayLive ? "Razorpay Gateway" : "Complete Payment"}
+                {isRazorpayLive ? "Razorpay Gateway" : "Instant Pay"}
               </span>
             </div>
           </div>

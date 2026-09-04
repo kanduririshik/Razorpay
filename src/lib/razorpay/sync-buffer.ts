@@ -22,8 +22,22 @@ export interface VerifiedRecoveryEvent {
   source: "webhook" | "callback";
 }
 
-// In-memory event buffer (per-server-instance)
+export interface FailedPaymentEvent {
+  paymentId: string;              // RecoverAI payment ID (e.g. "PAY98231")
+  orderId: string;                // e.g. "RA98231"
+  razorpayPaymentId?: string;
+  razorpayPaymentLinkId?: string;
+  amount: number;
+  failureReason: string;          // Real Razorpay error description
+  errorCode?: string;             // Real Razorpay error code
+  status: "FAILED";
+  timestamp: string;
+  source: "webhook" | "status_check" | "callback";
+}
+
+// In-memory event buffers (per-server-instance)
 const eventBuffer: Map<string, VerifiedRecoveryEvent> = new Map();
+const failedBuffer: Map<string, FailedPaymentEvent> = new Map();
 
 /** Store a verified recovery event (called from webhook or callback handler) */
 export function storeVerifiedRecovery(event: VerifiedRecoveryEvent): void {
@@ -35,7 +49,7 @@ export function getVerifiedRecovery(paymentId: string): VerifiedRecoveryEvent | 
   return eventBuffer.get(paymentId);
 }
 
-/** Retrieve and clear all pending events (used by /api/razorpay/sync polling) */
+/** Retrieve and clear all pending recovery events (used by /api/razorpay/sync polling) */
 export function drainVerifiedRecoveries(): VerifiedRecoveryEvent[] {
   const events = Array.from(eventBuffer.values());
   eventBuffer.clear();
@@ -46,3 +60,21 @@ export function drainVerifiedRecoveries(): VerifiedRecoveryEvent[] {
 export function isPaymentServerVerified(paymentId: string): boolean {
   return eventBuffer.has(paymentId);
 }
+
+/** Store a failed payment event */
+export function storeFailedPayment(event: FailedPaymentEvent): void {
+  failedBuffer.set(event.paymentId, event);
+}
+
+/** Retrieve a failed payment event by RecoverAI payment ID */
+export function getFailedPayment(paymentId: string): FailedPaymentEvent | undefined {
+  return failedBuffer.get(paymentId);
+}
+
+/** Retrieve and clear all pending failed payment events */
+export function drainFailedPayments(): FailedPaymentEvent[] {
+  const events = Array.from(failedBuffer.values());
+  failedBuffer.clear();
+  return events;
+}
+

@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { DemoDataProvider } from "@/context/DemoDataContext";
 import { SimulationProvider } from "@/context/SimulationContext";
+import { CustomerAuthProvider } from "@/context/CustomerAuthContext";
 import AppShell from "@/components/layout/AppShell";
 
 export const metadata: Metadata = {
-  title: "RecoverAI Furniture & Autonomous Revenue Recovery Agent",
+  title: "Slander's Furniture Store | Handcrafted Luxury Living",
   description:
-    "Autonomous AI revenue recovery platform and bespoke furniture e-commerce store with real-time Razorpay integration.",
+    "Timeless solid wood furniture crafted for modern Indian homes. Pan-India white-glove delivery.",
 };
 
 export default function RootLayout({
@@ -20,7 +21,9 @@ export default function RootLayout({
       <body className="bg-[#090d16] text-slate-100 min-h-screen antialiased">
         <DemoDataProvider>
           <SimulationProvider>
-            <AppShell>{children}</AppShell>
+            <CustomerAuthProvider>
+              <AppShell>{children}</AppShell>
+            </CustomerAuthProvider>
           </SimulationProvider>
         </DemoDataProvider>
       </body>

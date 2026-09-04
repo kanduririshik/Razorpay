@@ -72,32 +72,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0f17] text-slate-100 selection:bg-amber-500/30 selection:text-amber-200">
       {/* Top Store Announcement Bar */}
-      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-b border-slate-800/80 px-4 py-2 text-xs">
+      <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-b border-slate-800/80 px-4 py-1.5 text-xs">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
             <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 font-mono text-[10px] font-semibold uppercase tracking-wider border border-amber-500/20">
               Complimentary Shipping
             </span>
-            <span className="text-slate-300">
+            <span className="text-slate-300 text-[11px]">
               Pan-India White-Glove Delivery &amp; Assembly on Orders Above ₹10,000
             </span>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-4">
+            <span className="text-[11px] text-slate-400 hidden sm:inline font-mono">
+              Demo Admin: admin@recoverai.demo
+            </span>
             <Link
               href="/admin"
-              className="inline-flex items-center space-x-1.5 px-3 py-1 bg-gradient-to-r from-brand-accent to-ai-600 hover:from-brand-accent/90 hover:to-ai-600/90 text-white font-medium rounded-lg text-xs shadow-md shadow-brand-accent/20 transition-all hover:scale-[1.02]"
+              className="inline-flex flex-col items-end text-right text-slate-400 hover:text-amber-400 transition-colors group"
             >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Merchant Admin Portal</span>
-              <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
+              <span className="text-[11px] font-medium flex items-center space-x-1">
+                <span>Merchant Admin</span>
+                <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+              </span>
+              <span className="text-[9px] font-mono text-slate-400">Demo Access</span>
             </Link>
           </div>
         </div>
       </div>
 
       {/* Customer Store Navigation Header */}
-      <header className="sticky top-0 z-40 bg-[#0b0f17]/90 backdrop-blur-md border-b border-slate-800/80">
+      <header className="sticky top-0 z-40 bg-[#0b0f17]/95 backdrop-blur-md border-b border-slate-800/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center space-x-3 group">
@@ -106,10 +111,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div>
               <div className="flex items-center space-x-1.5">
-                <span className="text-lg font-bold text-white tracking-tight font-serif">
-                  Recover<span className="text-amber-400">AI</span>
+                <span className="text-lg font-bold text-white tracking-wider font-serif uppercase">
+                  Slander&apos;s
                 </span>
-                <span className="text-xs uppercase tracking-widest text-amber-200/80 font-light">
+                <span className="text-xs uppercase tracking-widest text-amber-300/90 font-light">
                   Furniture
                 </span>
               </div>
@@ -120,7 +125,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           {/* Navigation Links */}
-          <nav className="hidden md:flex items-center space-x-7 text-sm font-medium text-slate-300">
+          <nav className="hidden lg:flex items-center space-x-7 text-sm font-medium text-slate-300">
             <Link
               href="/"
               className={`hover:text-amber-400 transition-colors ${
@@ -138,36 +143,59 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               Shop
             </Link>
             <Link
-              href="/order/RA98231"
-              className={`hover:text-amber-400 transition-colors ${
-                pathname.startsWith("/order") ? "text-amber-400 font-semibold" : ""
-              }`}
+              href="/shop?cat=living"
+              className="hover:text-amber-400 transition-colors"
             >
-              Orders
+              Living Room
             </Link>
             <Link
-              href="/cart"
-              className={`hover:text-amber-400 transition-colors ${
-                pathname === "/cart" ? "text-amber-400 font-semibold" : ""
-              }`}
+              href="/shop?cat=bedroom"
+              className="hover:text-amber-400 transition-colors"
             >
-              Cart
+              Bedroom
+            </Link>
+            <Link
+              href="/shop?cat=dining"
+              className="hover:text-amber-400 transition-colors"
+            >
+              Dining
+            </Link>
+            <Link
+              href="/shop"
+              className="hover:text-amber-400 transition-colors"
+            >
+              Collections
             </Link>
           </nav>
 
           {/* Right Action Controls */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3 sm:space-x-4">
+            <Link
+              href="/shop"
+              aria-label="Search"
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
+            >
+              <Search className="w-4 h-4" />
+            </Link>
+
             <Link
               href="/cart"
-              className="relative flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800/80 text-slate-200 transition-all group"
+              className="relative flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800/80 text-slate-200 transition-all group"
             >
               <ShoppingBag className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
               <span className="text-xs font-semibold hidden sm:inline">Cart</span>
               {totalCartCount > 0 && (
-                <span className="px-2 py-0.5 text-[11px] font-bold bg-amber-500 text-slate-950 rounded-full font-mono">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-slate-950 rounded-full font-mono">
                   {totalCartCount}
                 </span>
               )}
+            </Link>
+
+            <Link
+              href="/login"
+              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 font-medium rounded-xl text-xs transition-colors"
+            >
+              Account
             </Link>
 
             <Link
@@ -213,8 +241,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center space-x-3 p-3 rounded-xl bg-slate-900/40 border border-slate-800/60">
               <Sparkles className="w-5 h-5 text-purple-400 shrink-0" />
               <div>
-                <p className="font-semibold text-slate-200">RecoverAI Powered</p>
-                <p className="text-slate-400 text-[11px]">Autonomous failure recovery pipeline</p>
+                <p className="font-semibold text-slate-200">Artisanal Craftsmanship</p>
+                <p className="text-slate-400 text-[11px]">Kiln-dried timbers &amp; mortise joinery</p>
               </div>
             </div>
           </div>
@@ -224,17 +252,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center space-x-2">
               <Armchair className="w-4 h-4 text-amber-400" />
               <span className="font-medium text-slate-300">
-                RecoverAI Furniture E-Commerce Store
+                Slander&apos;s Furniture Store
               </span>
-              <span>© 2026 RecoverAI Living. All rights reserved.</span>
+              <span>© 2026 Slander&apos;s Living India Pvt. Ltd. All rights reserved.</span>
             </div>
 
             <div className="flex items-center space-x-6 text-slate-400">
               <Link href="/" className="hover:text-slate-200">
-                Storefront
+                Home
               </Link>
               <Link href="/shop" className="hover:text-slate-200">
-                Catalog
+                Collections
               </Link>
               <Link href="/cart" className="hover:text-slate-200">
                 Cart
@@ -246,7 +274,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 href="/admin"
                 className="text-amber-400 hover:text-amber-300 font-semibold flex items-center space-x-1"
               >
-                <span>Switch to Merchant Admin</span>
+                <span>Merchant Admin</span>
                 <ChevronRight className="w-3 h-3" />
               </Link>
             </div>

@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
-import { storeVerifiedRecovery } from "@/lib/razorpay/sync-buffer";
+import { storeVerifiedRecovery, storeFailedPayment } from "@/lib/razorpay/sync-buffer";
 
 export const runtime = "nodejs";
 
@@ -83,6 +83,50 @@ export async function POST(req: NextRequest) {
 
       console.log(`[RecoverAI webhook] ✅ Recovery confirmed for ${recoveraiPaymentId} — ₹${amountInRupees}`);
       return NextResponse.json({ received: true, processed: true });
+    }
+
+    // ── Handle payment.failed ───────────────────────────────────────────
+    if (eventType === "payment.failed") {
+      const payload = event?.payload;
+      const paymentEntity = payload?.payment?.entity;
+      const paymentLinkEntity = payload?.payment_link?.entity;
+
+      if (!paymentEntity) {
+        return NextResponse.json({ received: true, processed: false, reason: "No payment entity" });
+      }
+
+      const recoveraiPaymentId =
+        paymentLinkEntity?.notes?.recoverai_payment_id ??
+        paymentEntity?.notes?.recoverai_payment_id ??
+        paymentLinkEntity?.notes?.payment_id ??
+        paymentEntity?.notes?.payment_id ??
+        "PAY98231";
+
+      const recoveraiOrderId =
+        paymentLinkEntity?.notes?.recoverai_order_id ??
+        paymentEntity?.notes?.recoverai_order_id ??
+        "RA98231";
+
+      const failureReason =
+        paymentEntity.error_description ||
+        paymentEntity.error_reason ||
+        "Payment declined by bank";
+
+      storeFailedPayment({
+        paymentId: recoveraiPaymentId,
+        orderId: recoveraiOrderId,
+        razorpayPaymentId: paymentEntity.id,
+        razorpayPaymentLinkId: paymentEntity.payment_link_id ?? paymentLinkEntity?.id ?? "",
+        amount: Math.round((paymentEntity.amount ?? 100000) / 100),
+        failureReason,
+        errorCode: paymentEntity.error_code ?? "BAD_REQUEST_ERROR",
+        status: "FAILED",
+        timestamp: new Date().toISOString(),
+        source: "webhook",
+      });
+
+      console.log(`[RecoverAI webhook] ⚠️ Payment failure confirmed for ${recoveraiPaymentId} — ${failureReason}`);
+      return NextResponse.json({ received: true, processed: true, failureReason });
     }
 
     // Unknown/unhandled event — acknowledge to prevent retries
