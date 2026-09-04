@@ -113,7 +113,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       let razorpayLinkResult: {
         shortUrl: string;
         linkId: string;
-        mode: "live" | "simulation";
+        mode: "live" | "test" | "simulation";
         referenceId: string;
         originalAmount?: number;
         testPaymentAmount?: number;
@@ -202,7 +202,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
                           ? {
                               ...s,
                               description:
-                                linkData.mode === "live"
+                                linkData.mode === "live" || linkData.mode === "test"
                                   ? `✅ Razorpay Payment Link created: ${linkData.shortUrl} (₹${linkData.testPaymentAmount})`
                                   : `Recovery link dispatched: ${linkData.shortUrl}`,
                             }

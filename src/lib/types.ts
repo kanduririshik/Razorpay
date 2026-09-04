@@ -60,7 +60,7 @@ export interface PaymentData {
   updatedAt: string;
   razorpayLinkId?: string;
   razorpayShortUrl?: string;
-  razorpayMode?: "live" | "simulation";
+  razorpayMode?: "live" | "test" | "simulation";
   originalAmount?: number;
   testPaymentAmount?: number;
   customer?: CustomerData;

@@ -121,12 +121,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const resolvedMode: "live" | "test" = isTestMode ? "test" : "live";
+
     return NextResponse.json({
       success: true,
       linkId: result.data.id,
       shortUrl: result.data.short_url,
       referenceId,
-      mode: "live",
+      mode: resolvedMode,
       originalAmount,
       testPaymentAmount: paymentLinkAmount,
       isTestCapped: paymentLinkAmount !== originalAmount,

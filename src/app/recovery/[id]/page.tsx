@@ -58,7 +58,7 @@ export default function CustomerRecoveryPage() {
       })
         .then((r) => r.json())
         .then((data) => {
-          if (data.success && data.mode === "live" && data.shortUrl) {
+          if (data.success && (data.mode === "live" || data.mode === "test") && data.shortUrl) {
             setLiveLink(data.shortUrl);
             setLiveAmount(data.testPaymentAmount || 1000);
           }
@@ -70,7 +70,9 @@ export default function CustomerRecoveryPage() {
   const effectiveShortUrl = liveLink || initialShortUrl;
   const isRazorpayLive = Boolean(
     effectiveShortUrl &&
-    ((payment as any)?.razorpayMode === "live" || effectiveShortUrl.startsWith("https://rzp.io/"))
+    ((payment as any)?.razorpayMode === "live" ||
+      (payment as any)?.razorpayMode === "test" ||
+      effectiveShortUrl.startsWith("https://rzp.io/"))
   );
   const effectivePayAmount = isRazorpayLive && liveAmount ? liveAmount : amount;
 

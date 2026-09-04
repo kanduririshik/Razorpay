@@ -145,6 +145,9 @@ export async function POST(req: NextRequest) {
         source: "callback",
       });
 
+      const isTestMode = config.keyId.startsWith("rzp_test_");
+      const resolvedMode: "live" | "test" = isTestMode ? "test" : "live";
+
       return NextResponse.json({
         success: true,
         verified: true,
@@ -152,16 +155,19 @@ export async function POST(req: NextRequest) {
         amount: Math.round(payment.amount / 100),
         razorpayPaymentId,
         message: "Payment verified successfully. Recovery confirmed.",
-        mode: "live",
+        mode: resolvedMode,
       });
     }
+
+    const isTestMode = config.keyId.startsWith("rzp_test_");
+    const resolvedMode: "live" | "test" = isTestMode ? "test" : "live";
 
     return NextResponse.json({
       success: true,
       verified: false,
       status: payment.status === "failed" ? "FAILED" : "PENDING",
       message: `Payment status from Razorpay: ${payment.status}`,
-      mode: "live",
+      mode: resolvedMode,
     });
   } catch (err: any) {
     console.error("[RecoverAI] /api/razorpay/verify-payment error:", err);

@@ -43,7 +43,9 @@ export default function SimulationModal() {
   const probability = Math.round((result?.recoveryProbability || 0.87) * 100);
   const strategy = (result?.strategy || "SEND_PAYMENT_LINK").replace(/_/g, " ");
   const recoveryLink = result?.simulatedLink || "";
-  const isLiveMode = result?.razorpayLinkMode === "live";
+  const isRazorpayMode = result?.razorpayLinkMode === "live" || result?.razorpayLinkMode === "test";
+  const isLiveKey = result?.razorpayLinkMode === "live";
+  const badgeLabel = isLiveKey ? "RAZORPAY LIVE" : "RAZORPAY TEST MODE";
 
   const handleCopyLink = () => {
     if (recoveryLink) {
@@ -188,9 +190,13 @@ export default function SimulationModal() {
                   <span className="text-xs font-mono uppercase tracking-widest text-emerald-400 font-semibold">
                     Recovery Link Dispatched
                   </span>
-                  {isLiveMode ? (
-                    <span className="px-2 py-0.5 text-[10px] font-mono rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                      RAZORPAY TEST MODE
+                  {isRazorpayMode ? (
+                    <span className={`px-2 py-0.5 text-[10px] font-mono rounded-full border ${
+                      isLiveKey
+                        ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                        : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                    }`}>
+                      {badgeLabel}
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 text-[10px] font-mono rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -229,7 +235,7 @@ export default function SimulationModal() {
                     Agent Action
                   </span>
                   <span className="text-sm font-semibold text-emerald-400 truncate block">
-                    {isLiveMode ? "Razorpay Link Sent" : "Link Dispatched"}
+                    {isRazorpayMode ? "Razorpay Link Sent" : "Link Dispatched"}
                   </span>
                 </div>
               </div>
@@ -238,11 +244,21 @@ export default function SimulationModal() {
               {recoveryLink && (
                 <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 max-w-lg mx-auto text-left space-y-2">
                   <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                    <span>{isLiveMode ? "Razorpay Payment Link (Test Mode):" : "Secure Recovery Link:"}</span>
+                    <span>
+                      {isRazorpayMode
+                        ? isLiveKey
+                          ? "Razorpay Payment Link (Live):"
+                          : "Razorpay Payment Link (Test Mode):"
+                        : "Secure Recovery Link:"}
+                    </span>
                     <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
-                      isLiveMode ? "bg-blue-500/20 text-blue-400" : "bg-slate-700 text-slate-400"
+                      isRazorpayMode
+                        ? isLiveKey
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : "bg-blue-500/20 text-blue-400"
+                        : "bg-slate-700 text-slate-400"
                     }`}>
-                      {isLiveMode ? "RAZORPAY TEST MODE" : "SIM"}
+                      {isRazorpayMode ? badgeLabel : "SIM"}
                     </span>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -257,7 +273,7 @@ export default function SimulationModal() {
                     </button>
                     <a
                       href={recoveryLink}
-                      target={isLiveMode ? "_blank" : "_self"}
+                      target={isRazorpayMode ? "_blank" : "_self"}
                       rel="noopener noreferrer"
                       className="flex-shrink-0 px-3 py-2 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-lg border border-blue-500 transition-colors font-medium flex items-center space-x-1"
                     >
@@ -265,12 +281,17 @@ export default function SimulationModal() {
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
-                  {isLiveMode && (
+                  {isRazorpayMode && !isLiveKey && (
                     <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300">
-                      Razorpay Test Mode — ₹1,000 test transaction. Original payment value: {formatINR(recoveredAmount)}.
+                      Razorpay Test Mode — ₹{simulationData?.simulation?.testPaymentAmount || 1000} test transaction. Original payment value: {formatINR(recoveredAmount)}.
                     </div>
                   )}
-                  {!isLiveMode && (
+                  {isRazorpayMode && isLiveKey && (
+                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300">
+                      Razorpay Live Mode — Official production payment gateway link.
+                    </div>
+                  )}
+                  {!isRazorpayMode && (
                     <p className="text-[10px] text-slate-500 mt-1">
                       Set RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Vercel to generate real Razorpay links.
                     </p>

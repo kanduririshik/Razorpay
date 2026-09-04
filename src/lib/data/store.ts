@@ -1167,7 +1167,7 @@ export function saveRazorpayLinkData(
   linkData: {
     linkId: string;
     shortUrl: string;
-    mode: "live" | "simulation";
+    mode: "live" | "test" | "simulation";
     referenceId?: string;
     originalAmount?: number;
     testPaymentAmount?: number;
