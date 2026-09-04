@@ -35,32 +35,76 @@ export default function CustomerRecoveryPage() {
   const productName = order?.items[0]?.productName || "Modern 3-Seater Sofa";
   const orderId = order?.orderId || "RA98231";
 
+  const payment = query?.payment;
+  const initialShortUrl = (payment as any)?.razorpayShortUrl;
+  const [liveLink, setLiveLink] = useState<string | null>(initialShortUrl || null);
+  const [liveAmount, setLiveAmount] = useState<number | null>((payment as any)?.testPaymentAmount || null);
+
+  // Auto-resolve live Razorpay payment link if not yet populated
+  React.useEffect(() => {
+    if (!initialShortUrl && payment) {
+      fetch("/api/razorpay/payment-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentId: payment.paymentId,
+          orderId,
+          amount,
+          currency: "INR",
+          customerName: "Rahul Sharma",
+          customerEmail: "rahul.sharma@example.com",
+          customerPhone: "+919876543210",
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && data.mode === "live" && data.shortUrl) {
+            setLiveLink(data.shortUrl);
+            setLiveAmount(data.testPaymentAmount || 1000);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [initialShortUrl, payment, orderId, amount]);
+
+  const effectiveShortUrl = liveLink || initialShortUrl;
+  const isRazorpayLive = Boolean(
+    effectiveShortUrl &&
+    ((payment as any)?.razorpayMode === "live" || effectiveShortUrl.startsWith("https://rzp.io/"))
+  );
+  const effectivePayAmount = isRazorpayLive && liveAmount ? liveAmount : amount;
+
   const handleCompletePayment = async () => {
     setIsSubmitting(true);
 
-    // Simulate instant capture latency
+    // ── LIVE RAZORPAY PAYMENT LINK ──────────────────────────────────────
+    // If a real Razorpay shortUrl exists:
+    // 1. DO NOT run the 900ms simulation
+    // 2. DO NOT immediately call completeRecovery()
+    // 3. Redirect the browser to the Razorpay hosted payment link
+    if (isRazorpayLive && effectiveShortUrl) {
+      window.location.href = effectiveShortUrl;
+      return;
+    }
+
+    // ── SIMULATION FALLBACK (only when unconfigured or explicit simulation) ──
     await new Promise((res) => setTimeout(res, 900));
 
-    // Call server-side verify endpoint (simulation path — no signature needed)
     try {
       await fetch("/api/razorpay/verify-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recoveraiPaymentId: paymentId,
-          // Simulation — no real Razorpay IDs
         }),
       });
     } catch (e) {
-      // Non-fatal — fall through to LocalStorage update below
+      // Non-fatal
     }
 
-    // Complete the recovery in shared Local Storage store
     const result = completeRecovery(paymentId);
-
     setIsSubmitting(false);
 
-    // Navigate to payment success page
     router.push(
       `/payment-success?paymentId=${result.paymentId}&orderId=${result.orderId}&recovered=true`
     );
@@ -101,12 +145,29 @@ export default function CustomerRecoveryPage() {
               </div>
             </div>
             <div className="text-right">
-              <span className="text-[10px] text-slate-500 font-mono uppercase block">Amount</span>
+              <span className="text-[10px] text-slate-500 font-mono uppercase block">
+                {isRazorpayLive && liveAmount ? "Original Value" : "Amount"}
+              </span>
               <span className="text-xl font-bold text-amber-400 font-mono">
                 {formatINR(amount)}
               </span>
             </div>
           </div>
+
+          {/* Test Mode Note if applicable */}
+          {isRazorpayLive && liveAmount && liveAmount !== amount && (
+            <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs space-y-1">
+              <div className="font-semibold flex items-center justify-between">
+                <span>Razorpay Test Mode — {formatINR(liveAmount)} test transaction.</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  TEST MODE
+                </span>
+              </div>
+              <p className="text-slate-400 text-[11px]">
+                Original payment value: {formatINR(amount)}. Completing this test payment confirms your full furniture order.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono text-slate-400 pt-1">
             <div>
@@ -119,12 +180,15 @@ export default function CustomerRecoveryPage() {
             </div>
             <div>
               <span className="text-slate-500 block">Recovery Option:</span>
-              <span className="text-emerald-400 font-semibold">Complete Payment</span>
+              <span className="text-emerald-400 font-semibold">
+                {isRazorpayLive ? "Razorpay Gateway" : "Complete Payment"}
+              </span>
             </div>
           </div>
         </div>
 
         {/* Method Selector */}
+        {!isRazorpayLive && (
         <div className="space-y-3">
           <label className="text-xs font-mono text-slate-400 uppercase tracking-wider block">
             Select Resolution Channel:
@@ -178,12 +242,15 @@ export default function CustomerRecoveryPage() {
             </button>
           </div>
         </div>
+        )}
 
         {/* Security / Verification Badge */}
         <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Lock className="w-4 h-4 text-emerald-400" />
-            <span className="font-semibold tracking-wider font-mono text-slate-200">Verified Recovery Channel</span>
+            <span className="font-semibold tracking-wider font-mono text-slate-200">
+              {isRazorpayLive ? "Razorpay Hosted Payment Channel" : "Verified Recovery Channel"}
+            </span>
           </div>
           <span className="text-[10px] text-emerald-400 font-mono">256-Bit SSL Encrypted</span>
         </div>
@@ -198,19 +265,23 @@ export default function CustomerRecoveryPage() {
             {isSubmitting ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Processing Payment...</span>
+                <span>{isRazorpayLive ? "Redirecting to Razorpay..." : "Processing Payment..."}</span>
               </>
             ) : (
               <>
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Complete Payment — {formatINR(amount)}</span>
+                <span>
+                  Complete Payment — {formatINR(effectivePayAmount)}
+                </span>
                 <ArrowRight className="w-5 h-5 ml-1" />
               </>
             )}
           </button>
 
           <p className="text-center text-[11px] text-slate-500 font-mono">
-            Secure Payment Completion • Confirms your furniture order and triggers immediate logistics fulfillment.
+            {isRazorpayLive
+              ? `Opens official Razorpay hosted checkout • Confirms order ${orderId} (${formatINR(amount)}) upon test payment.`
+              : `Secure Payment Completion • Confirms your furniture order and triggers immediate logistics fulfillment.`}
           </p>
         </div>
       </div>

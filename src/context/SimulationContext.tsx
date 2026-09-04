@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { SimulationStep } from "@/lib/types";
-import { initiateRecoveryAction, getStoredState } from "@/lib/data/store";
+import { initiateRecoveryAction, getStoredState, saveRazorpayLinkData } from "@/lib/data/store";
 
 interface SimulationContextType {
   isModalOpen: boolean;
@@ -115,6 +115,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         linkId: string;
         mode: "live" | "simulation";
         referenceId: string;
+        originalAmount?: number;
+        testPaymentAmount?: number;
       } | null = null;
 
       try {
@@ -181,7 +183,18 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
                       linkId: linkData.linkId,
                       mode: linkData.mode,
                       referenceId: linkData.referenceId,
+                      originalAmount: linkData.originalAmount,
+                      testPaymentAmount: linkData.testPaymentAmount,
                     };
+                    // Persist to shared LocalStorage store immediately
+                    saveRazorpayLinkData(payment.paymentId, {
+                      linkId: linkData.linkId,
+                      shortUrl: linkData.shortUrl,
+                      mode: linkData.mode,
+                      referenceId: linkData.referenceId,
+                      originalAmount: linkData.originalAmount,
+                      testPaymentAmount: linkData.testPaymentAmount,
+                    });
                     // Update ACTING stage description with link info
                     setStages((prev) =>
                       prev.map((s, idx) =>
@@ -190,7 +203,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
                               ...s,
                               description:
                                 linkData.mode === "live"
-                                  ? `✅ Razorpay Payment Link created: ${linkData.shortUrl}`
+                                  ? `✅ Razorpay Payment Link created: ${linkData.shortUrl} (₹${linkData.testPaymentAmount})`
                                   : `Recovery link dispatched: ${linkData.shortUrl}`,
                             }
                           : s
@@ -211,10 +224,6 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         }
 
         // ── Initiate recovery in LocalStorage (WAITING_CUSTOMER state) ──
-        // Note: we do NOT call executeStoreRecovery here anymore.
-        // The payment stays in WAITING_CUSTOMER until the customer pays
-        // and we get a verified callback. This is correct for real Razorpay flow.
-        // For simulation (no keys), the recovery page /recovery/[id] handles completion.
         let initiateResult: any;
         try {
           initiateResult = initiateRecoveryAction(targetPaymentId);
@@ -241,6 +250,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             simulatedLink: razorpayLinkResult?.shortUrl ?? initiateResult?.recoveryUrl ?? `/recovery/${targetPaymentId}`,
             razorpayLinkMode: razorpayLinkResult?.mode ?? "simulation",
             razorpayLinkId: razorpayLinkResult?.linkId,
+            originalAmount: razorpayLinkResult?.originalAmount ?? payment?.amount ?? 32999,
+            testPaymentAmount: razorpayLinkResult?.testPaymentAmount ?? 1000,
           },
         };
 

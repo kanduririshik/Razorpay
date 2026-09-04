@@ -1162,6 +1162,39 @@ export function initiateRecoveryAction(paymentIdOrId: string) {
   };
 }
 
+export function saveRazorpayLinkData(
+  paymentIdOrId: string,
+  linkData: {
+    linkId: string;
+    shortUrl: string;
+    mode: "live" | "simulation";
+    referenceId?: string;
+    originalAmount?: number;
+    testPaymentAmount?: number;
+  }
+) {
+  const state = getStoredState();
+  const cleanId = paymentIdOrId.trim();
+  const pay = state.payments.find((p) => p.id === cleanId || p.paymentId === cleanId);
+  if (pay) {
+    pay.razorpayLinkId = linkData.linkId;
+    pay.razorpayShortUrl = linkData.shortUrl;
+    pay.razorpayMode = linkData.mode;
+    pay.originalAmount = linkData.originalAmount ?? pay.amount;
+    pay.testPaymentAmount = linkData.testPaymentAmount ?? pay.amount;
+  }
+  const action = state.recoveryActions.find(
+    (r) => r.paymentId === pay?.id || r.paymentId === cleanId
+  );
+  if (action) {
+    (action as any).razorpayLinkId = linkData.linkId;
+    (action as any).razorpayShortUrl = linkData.shortUrl;
+    (action as any).razorpayMode = linkData.mode;
+    (action as any).testPaymentAmount = linkData.testPaymentAmount;
+  }
+  saveStoredState(state);
+}
+
 export function completeCustomerRecovery(paymentIdOrId: string) {
   const state = getStoredState();
   const cleanId = paymentIdOrId.trim();

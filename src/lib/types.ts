@@ -58,6 +58,11 @@ export interface PaymentData {
   failureReason: FailureReason | null;
   createdAt: string;
   updatedAt: string;
+  razorpayLinkId?: string;
+  razorpayShortUrl?: string;
+  razorpayMode?: "live" | "simulation";
+  originalAmount?: number;
+  testPaymentAmount?: number;
   customer?: CustomerData;
   recoveryActions?: RecoveryActionData[];
   agentEvents?: AgentEventData[];

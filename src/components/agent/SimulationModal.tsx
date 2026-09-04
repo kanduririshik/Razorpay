@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useSimulation } from "@/context/SimulationContext";
-import { CheckCircle2, Loader2, Sparkles, X, ArrowRight, ShieldCheck, Zap } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, X, ArrowRight, ShieldCheck, Zap, ExternalLink } from "lucide-react";
 import confetti from "canvas-confetti";
 import { formatINR } from "@/lib/utils";
 
@@ -190,7 +190,7 @@ export default function SimulationModal() {
                   </span>
                   {isLiveMode ? (
                     <span className="px-2 py-0.5 text-[10px] font-mono rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                      RAZORPAY LIVE
+                      RAZORPAY TEST MODE
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 text-[10px] font-mono rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -198,35 +198,33 @@ export default function SimulationModal() {
                     </span>
                   )}
                 </div>
-                <h2 className="text-3xl font-bold text-white tracking-tight">
-                  {formatINR(recoveredAmount)}
-                </h2>
-                <p className="text-sm text-slate-400 max-w-md mx-auto">
-                  {isLiveMode
-                    ? <>Real Razorpay payment link sent to <span className="text-slate-200 font-medium">{customerName}</span>. Awaiting customer payment.</>  
-                    : <>Recovery link dispatched to <span className="text-slate-200 font-medium">{customerName}</span>. Awaiting customer action.</>}
+                <h3 className="text-xl font-serif font-bold text-white">
+                  Payment Recovery Dispatched
+                </h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Automated recovery action executed. A dedicated recovery channel has been provisioned.
                 </p>
               </div>
 
-              {/* Summary Stats Grid */}
-              <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-left">
-                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+              {/* KPI Summary Grid */}
+              <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto">
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-left">
                   <span className="text-[11px] text-slate-400 uppercase tracking-wider block">
-                    Recovery Probability
+                    Original Value
                   </span>
-                  <span className="text-lg font-bold text-brand-electric font-mono">
-                    {probability}%
+                  <span className="text-sm font-bold font-mono text-white">
+                    {formatINR(simulationData?.simulation?.amount || 32999)}
                   </span>
                 </div>
-                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-left">
                   <span className="text-[11px] text-slate-400 uppercase tracking-wider block">
-                    Selected Strategy
+                    Recovery Score
                   </span>
-                  <span className="text-sm font-semibold text-purple-400 truncate block">
-                    {strategy}
+                  <span className="text-sm font-bold font-mono text-emerald-400">
+                    {Math.round((simulationData?.simulation?.recoveryProbability || 0.87) * 100)}%
                   </span>
                 </div>
-                <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-left">
                   <span className="text-[11px] text-slate-400 uppercase tracking-wider block">
                     Agent Action
                   </span>
@@ -238,13 +236,13 @@ export default function SimulationModal() {
 
               {/* Recovery Link Output */}
               {recoveryLink && (
-                <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 max-w-lg mx-auto text-left">
-                  <div className="text-[11px] text-slate-400 flex items-center justify-between mb-2">
+                <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 max-w-lg mx-auto text-left space-y-2">
+                  <div className="text-[11px] text-slate-400 flex items-center justify-between">
                     <span>{isLiveMode ? "Razorpay Payment Link (Test Mode):" : "Secure Recovery Link:"}</span>
                     <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
                       isLiveMode ? "bg-blue-500/20 text-blue-400" : "bg-slate-700 text-slate-400"
                     }`}>
-                      {isLiveMode ? "REAL" : "SIM"}
+                      {isLiveMode ? "RAZORPAY TEST MODE" : "SIM"}
                     </span>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -257,24 +255,28 @@ export default function SimulationModal() {
                     >
                       {copied ? "✓" : "Copy"}
                     </button>
+                    <a
+                      href={recoveryLink}
+                      target={isLiveMode ? "_blank" : "_self"}
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0 px-3 py-2 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-lg border border-blue-500 transition-colors font-medium flex items-center space-x-1"
+                    >
+                      <span>Open Link</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
+                  {isLiveMode && (
+                    <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300">
+                      Razorpay Test Mode — ₹1,000 test transaction. Original payment value: {formatINR(recoveredAmount)}.
+                    </div>
+                  )}
                   {!isLiveMode && (
-                    <p className="text-[10px] text-slate-500 mt-2">
-                      Set RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET to generate real Razorpay links.
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Set RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Vercel to generate real Razorpay links.
                     </p>
                   )}
                 </div>
               )}
-
-              {/* Notice */}
-              <div className="flex items-center justify-center space-x-2 text-xs text-slate-400">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>
-                  {isLiveMode
-                    ? "Real Razorpay payment link created. Payment verified server-side on completion."
-                    : "Executed autonomously by RecoverAI Agent. Awaiting customer action."}
-                </span>
-              </div>
 
               {/* Actions */}
               <div className="flex justify-center space-x-3 pt-2">

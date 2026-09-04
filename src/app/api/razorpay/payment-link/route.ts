@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const config = getRazorpayConfig();
     const referenceId = generateRecoveryReferenceId(paymentId);
 
-    // ── SIMULATION FALLBACK: Razorpay not configured ──────────────────────
+    // ── SIMULATION FALLBACK: Razorpay genuinely not configured ────────────
     if (!config.isConfigured) {
       console.log("[RecoverAI] Razorpay not configured — using simulation fallback");
       const appUrl = config.appUrl || "http://localhost:3000";
@@ -77,17 +77,28 @@ export async function POST(req: NextRequest) {
         shortUrl: simulatedShortUrl,
         referenceId,
         mode: "simulation",
+        originalAmount: amount,
+        testPaymentAmount: amount,
         message: "Simulation mode: Razorpay keys not configured. Using simulated payment link.",
       });
     }
 
-    // ── LIVE: Create real Razorpay payment link ───────────────────────────
+    // ── LIVE / TEST MODE: Create real Razorpay payment link ───────────────
+    const isTestMode = config.keyId.startsWith("rzp_test_");
+    const originalAmount = amount;
+    // In Razorpay Test Mode, unactivated accounts have a ₹15,000 limit per payment link.
+    // When in Test Mode and amount > ₹15,000, cap the test link to ₹1,000 while retaining ₹32,999 in RecoverAI.
+    const paymentLinkAmount = isTestMode && originalAmount > 15000 ? 1000 : originalAmount;
+
     const result = await createPaymentLink({
-      amount,
+      amount: paymentLinkAmount,
+      originalAmount,
       currency,
       description:
         description ??
-        `Payment recovery for Order ${orderId} — RecoverAI`,
+        (paymentLinkAmount !== originalAmount
+          ? `Razorpay Test Recovery for Order ${orderId} (Original: ₹${originalAmount.toLocaleString("en-IN")}) — RecoverAI`
+          : `Payment recovery for Order ${orderId} — RecoverAI`),
       customerName,
       customerEmail,
       customerPhone: customerPhone.startsWith("+") ? customerPhone : `+91${customerPhone.replace(/\D/g, "")}`,
@@ -98,17 +109,16 @@ export async function POST(req: NextRequest) {
 
     if (!result.success) {
       console.error("[RecoverAI] Razorpay API error:", result.error);
-      // Graceful degradation to simulation
-      const appUrl = config.appUrl || "http://localhost:3000";
-      return NextResponse.json({
-        success: true,
-        linkId: `fallback_link_${paymentId}_${Date.now()}`,
-        shortUrl: `${appUrl}/recovery/${paymentId}`,
-        referenceId,
-        mode: "simulation",
-        message: `Razorpay API error (${result.error.code}): falling back to simulation.`,
-        razorpayError: result.error.description,
-      });
+      // NEVER silently fall back to simulation when Razorpay is configured!
+      return NextResponse.json(
+        {
+          success: false,
+          error: result.error.description ?? "Razorpay API error",
+          code: result.error.code ?? "RAZORPAY_API_ERROR",
+          httpStatus: result.error.httpStatus ?? 502,
+        },
+        { status: result.error.httpStatus ?? 502 }
+      );
     }
 
     return NextResponse.json({
@@ -117,6 +127,9 @@ export async function POST(req: NextRequest) {
       shortUrl: result.data.short_url,
       referenceId,
       mode: "live",
+      originalAmount,
+      testPaymentAmount: paymentLinkAmount,
+      isTestCapped: paymentLinkAmount !== originalAmount,
     });
   } catch (err: any) {
     console.error("[RecoverAI] /api/razorpay/payment-link error:", err);

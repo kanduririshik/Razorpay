@@ -65,6 +65,7 @@ export interface RazorpayPayment {
 
 export interface CreatePaymentLinkParams {
   amount: number;         // Amount in rupees (will be converted to paise)
+  originalAmount?: number; // Original business amount (e.g. 32999)
   currency?: string;
   description: string;
   customerName: string;
@@ -74,6 +75,7 @@ export interface CreatePaymentLinkParams {
   orderId: string;        // e.g. "RA98231"
   paymentId: string;      // e.g. "PAY98231"
   callbackUrl?: string;
+  notes?: Record<string, string>;
 }
 
 export async function createPaymentLink(params: CreatePaymentLinkParams) {
@@ -105,6 +107,11 @@ export async function createPaymentLink(params: CreatePaymentLinkParams) {
       recoverai_payment_id: params.paymentId,
       recoverai_order_id: params.orderId,
       recoverai_reference: params.referenceId,
+      original_amount: String(params.originalAmount ?? params.amount),
+      test_recovery_amount: String(params.amount),
+      payment_id: params.paymentId,
+      purpose: "RecoverAI recovery test",
+      ...(params.notes ?? {}),
     },
     reference_id: params.referenceId,
     callback_url: callbackUrl,
