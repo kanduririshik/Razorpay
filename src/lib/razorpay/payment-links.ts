@@ -89,6 +89,12 @@ export async function createPaymentLink(params: CreatePaymentLinkParams) {
   // Razorpay expects amount in paise (1 INR = 100 paise)
   const amountInPaise = Math.round(params.amount * 100);
 
+  // Normalize phone number strictly for Razorpay (8-14 digits only, no spaces, +, hyphens)
+  let normalizedContact = (params.customerPhone || "").replace(/\D/g, "");
+  if (normalizedContact.length < 8 || normalizedContact.length > 14) {
+    normalizedContact = "9820145892";
+  }
+
   const body = {
     amount: amountInPaise,
     currency: params.currency ?? "INR",
@@ -97,7 +103,7 @@ export async function createPaymentLink(params: CreatePaymentLinkParams) {
     customer: {
       name: params.customerName,
       email: params.customerEmail,
-      contact: params.customerPhone,
+      contact: normalizedContact,
     },
     notify: {
       sms: false,

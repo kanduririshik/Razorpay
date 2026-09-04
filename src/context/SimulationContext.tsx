@@ -160,6 +160,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
               );
 
               if (payment && customer) {
+                const rawDigits = (customer.phone || "").replace(/\D/g, "");
+                const normalizedContact =
+                  rawDigits.length >= 8 && rawDigits.length <= 14 ? rawDigits : "9820145892";
+
                 const linkRes = await fetch("/api/razorpay/payment-link", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -167,11 +171,13 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
                     paymentId: payment.paymentId,
                     orderId: order?.orderId ?? "RA" + payment.paymentId.replace("PAY", ""),
                     amount: payment.amount,
+                    originalAmount: payment.amount,
+                    type: "recovery",
                     currency: payment.currency ?? "INR",
                     customerName: customer.name,
                     customerEmail: customer.email,
-                    customerPhone: customer.phone,
-                    description: `Payment recovery for ${order?.items?.[0]?.productName ?? "furniture order"} — RecoverAI`,
+                    customerPhone: normalizedContact,
+                    description: `Payment recovery for ${order?.items?.[0]?.productName ?? "Modern 3-Seater Sofa"} — RecoverAI`,
                   }),
                 });
 

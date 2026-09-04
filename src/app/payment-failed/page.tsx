@@ -12,6 +12,7 @@ import {
   ShoppingBag,
   Eye,
   ShieldAlert,
+  ArrowRight,
 } from "lucide-react";
 
 function PaymentFailedContent() {
@@ -73,6 +74,11 @@ function PaymentFailedContent() {
         {/* Order Details Receipt Box */}
         <div className="max-w-md mx-auto bg-slate-950/80 border border-slate-800/90 rounded-2xl p-6 text-left space-y-3 font-mono text-xs">
           <div className="flex justify-between pb-2 border-b border-slate-800">
+            <span className="text-slate-500">Customer</span>
+            <span className="font-semibold text-white">{order?.customerName || "Rahul Sharma"}</span>
+          </div>
+
+          <div className="flex justify-between pb-2 border-b border-slate-800">
             <span className="text-slate-500">Order ID</span>
             <span className="font-semibold text-white">#{orderId}</span>
           </div>
@@ -83,7 +89,7 @@ function PaymentFailedContent() {
           </div>
 
           <div className="flex justify-between pb-2 border-b border-slate-800">
-            <span className="text-slate-500">Original Amount</span>
+            <span className="text-slate-500">Original Order Value</span>
             <span className="font-bold text-white text-sm">{formatINR(amount)}</span>
           </div>
 
@@ -97,15 +103,28 @@ function PaymentFailedContent() {
             <span className="font-semibold text-red-400">Payment Failed</span>
           </div>
 
-          <div className="flex justify-between items-center pt-1">
+          <div className="flex justify-between items-start pt-1">
             <span className="text-slate-500">Failure Reason</span>
-            <span className="px-2.5 py-1 rounded bg-red-500/20 text-red-300 font-semibold border border-red-500/30 text-right max-w-[200px] truncate" title={failureReason}>
-              {failureReason}
-            </span>
+            <div className="text-right max-w-[220px]">
+              <span className="px-2.5 py-1 rounded bg-red-500/20 text-red-300 font-semibold border border-red-500/30 inline-block">
+                {failureReason}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Action Buttons: Try Again, View Order */}
+        {/* RecoverAI Autonomous System Notice */}
+        <div className="max-w-md mx-auto p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-left space-y-2">
+          <div className="flex items-center space-x-2 text-amber-400 font-semibold">
+            <ShieldAlert className="w-4 h-4" />
+            <span>RecoverAI Telemetry Active</span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed">
+            RecoverAI has detected the failed payment and is preparing a recovery action. The failure payload has been synchronized with the Merchant Command Center.
+          </p>
+        </div>
+
+        {/* Action Buttons: Try Again, View Order, Go to Admin */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Link
             href="/checkout"
@@ -113,6 +132,14 @@ function PaymentFailedContent() {
           >
             <RotateCcw className="w-4 h-4" />
             <span>Try Again</span>
+          </Link>
+
+          <Link
+            href="/admin"
+            className="w-full sm:w-auto px-6 py-3.5 bg-brand-accent/20 hover:bg-brand-accent/30 text-brand-electric font-bold rounded-xl text-xs border border-brand-accent/40 transition-all flex items-center justify-center space-x-2"
+          >
+            <span>View in RecoverAI Admin</span>
+            <ArrowRight className="w-4 h-4" />
           </Link>
 
           <Link

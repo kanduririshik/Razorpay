@@ -1,37 +1,34 @@
 /**
  * POST /api/razorpay/payment-link
  *
- * Creates a Razorpay Payment Link for recovery flow.
- * Called by the admin SimulationModal during the ACTING stage.
+ * Creates a standard Razorpay Payment Link for:
+ * 1. Initial checkout from Slander's Furniture Store
+ * 2. Recovery flow from RecoverAI Admin / Customer Recovery Page
  *
  * Request body:
  * {
  *   paymentId: string;       — RecoverAI payment ID (e.g. "PAY98231")
  *   orderId: string;         — RecoverAI order ID (e.g. "RA98231")
  *   amount: number;          — Amount in INR (e.g. 32999)
+ *   originalAmount?: number; — Original business amount in INR (e.g. 32999)
+ *   type?: string;           — "initial_checkout" | "recovery"
  *   currency?: string;       — Default "INR"
  *   customerName: string;
  *   customerEmail: string;
  *   customerPhone: string;
  *   description?: string;
+ *   callbackUrl?: string;
  * }
  *
  * Response (success):
  * {
  *   success: true;
  *   linkId: string;          — Razorpay payment link ID
- *   shortUrl: string;        — Short URL to send to customer
+ *   shortUrl: string;        — Short URL to navigate to Razorpay (e.g. "https://rzp.io/...")
  *   referenceId: string;     — Our reference ID for tracking
- *   mode: "live"             — "live" when Razorpay, "simulation" as fallback
- * }
- *
- * Response (not configured — graceful simulation fallback):
- * {
- *   success: true;
- *   linkId: string;          — Simulated link ID
- *   shortUrl: string;        — Simulated fallback URL
- *   referenceId: string;
- *   mode: "simulation"
+ *   mode: "test" | "live"    — Resolved mode
+ *   originalAmount: number;
+ *   testPaymentAmount: number;
  * }
  */
 
@@ -48,20 +45,30 @@ export async function POST(req: NextRequest) {
       paymentId,
       orderId,
       amount,
+      originalAmount: reqOriginalAmount,
+      type,
       currency = "INR",
       customerName,
       customerEmail,
       customerPhone,
       description,
+      callbackUrl,
     } = body;
 
+    const originalAmount = Number(reqOriginalAmount || amount || 32999);
+
     // Validate required fields
-    if (!paymentId || !orderId || !amount || !customerName || !customerEmail || !customerPhone) {
+    if (!paymentId || !orderId || !originalAmount || !customerName || !customerEmail || !customerPhone) {
       return NextResponse.json(
         { success: false, error: "Missing required fields" },
         { status: 400 }
       );
     }
+
+    // Strictly normalize contact to digits only (between 8 and 14 digits)
+    const rawDigits = (customerPhone || "").replace(/\D/g, "");
+    const normalizedContact =
+      rawDigits.length >= 8 && rawDigits.length <= 14 ? rawDigits : "9820145892";
 
     const config = getRazorpayConfig();
     const referenceId = generateRecoveryReferenceId(paymentId);
@@ -73,9 +80,13 @@ export async function POST(req: NextRequest) {
         const prodRes = await fetch("https://razorpay-rishik.vercel.app/api/razorpay/payment-link", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            ...body,
+            customerPhone: normalizedContact,
+          }),
         });
         const prodData = await prodRes.json();
+        console.log("[RecoverAI] Delegation response:", { status: prodRes.status, prodData });
         if (prodData.success && prodData.shortUrl) {
           return NextResponse.json(prodData);
         }
@@ -91,15 +102,14 @@ export async function POST(req: NextRequest) {
         shortUrl: simulatedShortUrl,
         referenceId,
         mode: "simulation",
-        originalAmount: amount,
-        testPaymentAmount: amount,
+        originalAmount,
+        testPaymentAmount: originalAmount,
         message: "Simulation mode: Razorpay keys not configured. Using simulated payment link.",
       });
     }
 
     // ── LIVE / TEST MODE: Create real Razorpay payment link ───────────────
     const isTestMode = config.keyId.startsWith("rzp_test_");
-    const originalAmount = amount;
     // In Razorpay Test Mode, our application applies a ₹1,000 test transaction cap.
     // Original order value: ₹32,999. Actual Razorpay Test Mode transaction: ₹1,000.
     const paymentLinkAmount = isTestMode && originalAmount > 1000 ? 1000 : originalAmount;
@@ -115,20 +125,40 @@ export async function POST(req: NextRequest) {
           : `Order #${orderId} payment — Slander's Furniture Store`),
       customerName,
       customerEmail,
-      customerPhone: customerPhone.startsWith("+") ? customerPhone : `+91${customerPhone.replace(/\D/g, "")}`,
+      customerPhone: normalizedContact,
       referenceId,
       orderId,
       paymentId,
+      callbackUrl,
+      notes: {
+        recoverai_payment_id: paymentId,
+        recoverai_order_id: orderId,
+        recoverai_reference: referenceId,
+        original_amount: String(originalAmount),
+        test_recovery_amount: String(paymentLinkAmount),
+        payment_id: paymentId,
+        type: type || "checkout",
+        purpose: "RecoverAI recovery test",
+      },
     });
 
     if (!result.success) {
-      console.error("[RecoverAI] Razorpay API error:", result.error);
-      // NEVER silently fall back to simulation when Razorpay is configured!
+      // Safe error logging: NO secrets, only status, code, description, and field
+      console.error("[Razorpay API Error]", {
+        httpStatus: result.error.httpStatus,
+        code: result.error.code,
+        description: result.error.description,
+        field: result.error.field,
+        step: result.error.step,
+        reason: result.error.reason,
+      });
+
       return NextResponse.json(
         {
           success: false,
           error: result.error.description ?? "Razorpay API error",
           code: result.error.code ?? "RAZORPAY_API_ERROR",
+          field: result.error.field,
           httpStatus: result.error.httpStatus ?? 502,
         },
         { status: result.error.httpStatus ?? 502 }

@@ -55,8 +55,20 @@ export async function POST(req: NextRequest) {
 
     const config = getRazorpayConfig();
 
-    // ── SIMULATION MODE: No Razorpay keys configured ──────────────────────
+    // ── FALLBACK IF LOCAL KEYS NOT LOADED: Delegate to production gateway ────
     if (!config.isConfigured) {
+      try {
+        const prodRes = await fetch("https://razorpay-rishik.vercel.app/api/razorpay/verify-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const prodData = await prodRes.json();
+        return NextResponse.json(prodData);
+      } catch (delegateErr) {
+        console.warn("[RecoverAI] Verify delegation failed, checking simulation:", delegateErr);
+      }
+
       // Accept simulation payment IDs (sim_payment_xxx) as verified
       if (
         recoveraiPaymentId &&

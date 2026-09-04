@@ -134,3 +134,38 @@ export function getFailureReasonClass(reason: FailureReason | string | null): st
       return "text-slate-300";
   }
 }
+
+/**
+ * Classifies a raw Razorpay failure description/reason into a user-friendly RecoverAI category,
+ * while preserving the raw error information.
+ */
+export function classifyRazorpayFailure(
+  rawReason?: string | null,
+  errorCode?: string | null
+): { category: string; rawDescription: string } {
+  const raw = rawReason?.trim() || errorCode?.trim() || "Payment declined by bank gateway";
+  const str = `${rawReason || ""} ${errorCode || ""}`.toLowerCase();
+
+  let category = "PAYMENT FAILED";
+  if (str.includes("upi") || str.includes("vpa") || str.includes("mpin")) {
+    category = "UPI PAYMENT FAILURE";
+  } else if (str.includes("insufficient") || str.includes("balance") || str.includes("funds")) {
+    category = "INSUFFICIENT FUNDS";
+  } else if (str.includes("card") || str.includes("cvv") || str.includes("expiry") || str.includes("declined")) {
+    category = "CARD DECLINED";
+  } else if (str.includes("auth") || str.includes("otp") || str.includes("verification") || str.includes("3ds")) {
+    category = "AUTHENTICATION FAILURE";
+  } else if (str.includes("timeout") || str.includes("network")) {
+    category = "TIMEOUT / NETWORK ERROR";
+  } else if (str.includes("bank") || str.includes("issuer") || str.includes("server")) {
+    category = "BANK DECLINED";
+  } else {
+    category = "PAYMENT METHOD FAILURE";
+  }
+
+  return {
+    category,
+    rawDescription: raw,
+  };
+}
+

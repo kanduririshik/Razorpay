@@ -1207,6 +1207,24 @@ export function completeCustomerRecovery(paymentIdOrId: string) {
   const now = new Date();
   const nowIso = now.toISOString();
 
+  // IDEMPOTENCY / DUPLICATE PROTECTION:
+  // If payment is already RECOVERED, do not re-add to revenue or customer lifetime value
+  if (pay.status === "RECOVERED") {
+    const order = (state.orders || []).find(
+      (o) => o.paymentId === pay.paymentId || o.paymentId === pay.id
+    );
+    const cust = state.customers.find((c) => c.id === pay.customerId);
+    return {
+      success: true,
+      alreadyRecovered: true,
+      paymentId: pay.paymentId,
+      orderId: order?.orderId || "RA98231",
+      recoveredAmount: pay.amount,
+      customerName: cust?.name || "Rahul Sharma",
+      updatedMetrics: calculateDashboardMetrics(state),
+    };
+  }
+
   // 1. Mark Payment RECOVERED
   state.payments[payIdx] = {
     ...pay,

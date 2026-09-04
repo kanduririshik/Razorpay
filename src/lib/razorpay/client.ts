@@ -15,6 +15,9 @@ export interface RazorpayClientError {
   error: true;
   code: string;
   description: string;
+  field?: string;
+  step?: string;
+  reason?: string;
   httpStatus: number;
 }
 
@@ -60,12 +63,24 @@ export async function razorpayFetch<T>(
     const body = await response.json();
 
     if (!response.ok) {
+      console.error("[Razorpay API Error]", {
+        httpStatus: response.status,
+        code: body?.error?.code ?? "RAZORPAY_API_ERROR",
+        description: body?.error?.description ?? `HTTP ${response.status}`,
+        field: body?.error?.field,
+        step: body?.error?.step,
+        reason: body?.error?.reason,
+      });
+
       return {
         success: false,
         error: {
           error: true,
           code: body?.error?.code ?? "RAZORPAY_API_ERROR",
           description: body?.error?.description ?? `HTTP ${response.status}`,
+          field: body?.error?.field,
+          step: body?.error?.step,
+          reason: body?.error?.reason,
           httpStatus: response.status,
         },
       };

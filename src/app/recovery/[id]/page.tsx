@@ -50,10 +50,12 @@ export default function CustomerRecoveryPage() {
           paymentId: payment.paymentId,
           orderId,
           amount,
+          originalAmount: amount,
+          type: "recovery",
           currency: "INR",
           customerName: "Rahul Sharma",
-          customerEmail: "rahul.sharma@example.com",
-          customerPhone: "+919876543210",
+          customerEmail: "rahul.sharma@gmail.com",
+          customerPhone: "9820145892",
         }),
       })
         .then((r) => r.json())

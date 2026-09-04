@@ -90,12 +90,12 @@ export default function PaymentFailedModal({
           </div>
 
           <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
-            <span className="text-slate-500">Order Amount</span>
+            <span className="text-slate-500">Original Order Value</span>
             <span className="font-bold text-white">{formatINR(amount)}</span>
           </div>
 
           <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
-            <span className="text-slate-500">Razorpay Test Cap</span>
+            <span className="text-slate-500">Actual Test Transaction</span>
             <span className="font-semibold text-blue-300">₹{testAmount.toLocaleString("en-IN")}</span>
           </div>
 
@@ -109,7 +109,7 @@ export default function PaymentFailedModal({
 
         {/* Notice for Demo Evaluator */}
         <div className="bg-slate-950 border border-amber-500/20 rounded-xl p-3 text-[11px] text-slate-400 leading-relaxed">
-          <span className="text-amber-400 font-medium">Autonomous Recovery:</span> This failed payment is recorded in RecoverAI. You can view the telemetry and trigger the AI recovery link from the Merchant Admin.
+          <span className="text-amber-400 font-medium">RecoverAI Detection:</span> RecoverAI has detected the failed payment and is preparing a recovery action.
         </div>
 
         {/* Action Buttons */}

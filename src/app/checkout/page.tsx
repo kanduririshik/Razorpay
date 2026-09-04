@@ -157,17 +157,21 @@ function CheckoutContent() {
       // 2. Call server to create a real Razorpay Test Mode Standard Payment Link
       const callbackUrl = `${window.location.origin}/payment-checkout/callback?orderId=${internalOrderId}&paymentId=${internalPaymentId}`;
 
+      const normalizedPhone = customerPhone.replace(/\D/g, "");
+
       const res = await fetch("/api/razorpay/payment-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentId: internalPaymentId,
           orderId: internalOrderId,
+          type: "initial_checkout",
           amount: totalAmount,
+          originalAmount: totalAmount,
           currency: "INR",
           customerName,
           customerEmail,
-          customerPhone,
+          customerPhone: normalizedPhone.length >= 8 && normalizedPhone.length <= 14 ? normalizedPhone : "9820145892",
           callbackUrl,
           description: `Order ${internalOrderId} for ${items[0]?.product.name || "Modern 3-Seater Sofa"} — Slander's Furniture Store`,
         }),
@@ -189,18 +193,8 @@ function CheckoutContent() {
         setActiveShortUrl(data.shortUrl);
         setActiveLinkId(data.linkId);
 
-        // 3. Open Razorpay Checkout
-        // Try opening in new window/tab
-        const rzpWindow = window.open(data.shortUrl, "_blank");
-
-        // If popup blocker blocked the window or on mobile, navigate directly
-        if (!rzpWindow || rzpWindow.closed || typeof rzpWindow.closed === "undefined") {
-          window.location.href = data.shortUrl;
-          return;
-        }
-
-        // Window opened! Start polling server for real status
-        startPollingPaymentStatus(data.linkId, internalPaymentId, internalOrderId);
+        // 3. Immediately navigate to official Razorpay hosted checkout
+        window.location.href = data.shortUrl;
         return;
       }
 
