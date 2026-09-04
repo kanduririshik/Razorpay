@@ -442,16 +442,21 @@ function CheckoutContent() {
             </div>
 
             {/* TEST PAYMENT INSTRUCTION CARD */}
-            <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-xs space-y-2">
+            <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-xs space-y-2.5">
               <div className="flex items-center space-x-2 text-blue-300 font-semibold font-mono text-[11px]">
                 <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                <span>TEST PAYMENT INSTRUCTIONS</span>
+                <span>RAZORPAY TEST MODE</span>
               </div>
-              <p className="text-slate-300 text-[11px] leading-relaxed">
-                For the failed-payment demo, select <strong className="text-white">UPI</strong> inside Razorpay and enter Razorpay&apos;s documented test failure UPI ID:
-              </p>
-              <div className="p-2 rounded-lg bg-black/40 border border-blue-500/20 font-mono text-amber-300 text-xs font-bold select-all text-center">
-                failure@razorpay
+              <div className="text-slate-300 text-[11px] leading-relaxed space-y-1">
+                <p className="font-semibold text-white">For the failed-payment test:</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300 pt-0.5">
+                  <li>Click Place Order</li>
+                  <li>Razorpay hosted checkout opens</li>
+                  <li>Select UPI</li>
+                  <li>Enter: <code className="text-amber-300 bg-black/60 px-1.5 py-0.5 rounded font-mono font-bold select-all">failure@razorpay</code></li>
+                  <li>Complete the test payment attempt</li>
+                  <li>Razorpay should report PAYMENT FAILED</li>
+                </ol>
               </div>
               <p className="text-[10px] text-slate-400 pt-1 border-t border-blue-500/20">
                 Razorpay Test Mode — ₹1,000 test transaction. Original order value: ₹32,999.

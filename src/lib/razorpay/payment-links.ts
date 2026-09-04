@@ -125,10 +125,48 @@ export async function createPaymentLink(params: CreatePaymentLinkParams) {
     callback_method: "get",
   };
 
-  return razorpayFetch<RazorpayPaymentLink>("/payment_links", {
+  let result = await razorpayFetch<RazorpayPaymentLink>("/payment_links", {
     method: "POST",
     body: JSON.stringify(body),
   });
+
+  // If Test Mode limit reached ("test mode limit of 30 reached for payment_link"):
+  // Clean up older active/unpaid links to free quota and retry creating a fresh link
+  if (
+    !result.success &&
+    (result.error.code === "RATE_LIMIT_EXCEEDED" ||
+      result.error.description?.toLowerCase().includes("limit"))
+  ) {
+    try {
+      console.log("[RecoverAI] Test mode limit reached. Cleaning up older unpaid payment links...");
+      const listRes = await listPaymentLinks(25);
+      if (listRes.success && Array.isArray(listRes.data?.items)) {
+        // Cancel only links that are still in "created" status
+        const cancellable = listRes.data.items.filter((l) => l.status === "created");
+        console.log(`[RecoverAI] Found ${cancellable.length} unpaid links to cancel.`);
+        for (const oldLink of cancellable.slice(0, 8)) {
+          await cancelPaymentLink(oldLink.id);
+        }
+        // Retry creating a fresh payment link
+        result = await razorpayFetch<RazorpayPaymentLink>("/payment_links", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      }
+    } catch (cleanErr) {
+      console.warn("[RecoverAI] Link cleanup failed:", cleanErr);
+    }
+  }
+
+  return result;
+}
+
+// ─── List Payment Links ─────────────────────────────────────────────────────
+
+export async function listPaymentLinks(count = 30) {
+  return razorpayFetch<{ entity: string; count: number; items: RazorpayPaymentLink[] }>(
+    `/payment_links?count=${count}`
+  );
 }
 
 // ─── Fetch Payment Link Status ───────────────────────────────────────────────
@@ -137,11 +175,11 @@ export async function fetchPaymentLink(linkId: string) {
   return razorpayFetch<RazorpayPaymentLink>(`/payment_links/${linkId}`);
 }
 
-// ─── Cancel Payment Link ─────────────────────────────────────────────────────
+// ─── Cancel Payment Link (POST /payment_links/:id/cancel) ────────────────────
 
 export async function cancelPaymentLink(linkId: string) {
-  return razorpayFetch<{ success: boolean }>(`/payment_links/${linkId}/cancel`, {
-    method: "PATCH",
+  return razorpayFetch<RazorpayPaymentLink>(`/payment_links/${linkId}/cancel`, {
+    method: "POST",
   });
 }
 
@@ -153,7 +191,8 @@ export async function verifyPaymentById(razorpayPaymentId: string) {
 
 // ─── Generate unique reference ID ───────────────────────────────────────────
 
-export function generateRecoveryReferenceId(paymentId: string): string {
+export function generateRecoveryReferenceId(paymentId: string, type: string = "recovery", orderId: string = "RA98231"): string {
   const suffix = Date.now().toString(36).toUpperCase();
-  return `RECOVER-${paymentId}-${suffix}`;
+  const prefix = type === "initial_checkout" ? "INITIAL" : "RECOVER";
+  return `${prefix}-${orderId}-${suffix}`;
 }

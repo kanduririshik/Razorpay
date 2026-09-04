@@ -1050,25 +1050,38 @@ export function processCheckout(params: {
       alert: alertRecord,
     };
   } else {
-    const paymentId = `PAY${Math.floor(20000 + Math.random() * 79999)}`;
-    const orderId = `RA${paymentId.replace("PAY", "")}`;
+    const paymentId = isFlagshipSofa ? "PAY98231" : `PAY${Math.floor(20000 + Math.random() * 79999)}`;
+    const orderId = isFlagshipSofa ? "RA98231" : `RA${paymentId.replace("PAY", "")}`;
+
+    const existingPayIdx = state.payments.findIndex(
+      (p) => p.paymentId === paymentId || (isFlagshipSofa && p.paymentId === "PAY98231")
+    );
 
     const paymentRecord: PaymentData = {
-      id: `pay_${paymentId.toLowerCase()}`,
+      id: existingPayIdx > -1 ? state.payments[existingPayIdx].id : `pay_${paymentId.toLowerCase()}`,
       paymentId,
       customerId: "cust_rahul",
       amount: totalAmount,
       currency: "INR",
-      status: "SUCCESS",
+      status: "PENDING",
       method: paymentMethod as any,
       failureReason: null,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    state.payments.unshift(paymentRecord);
+
+    if (existingPayIdx > -1) {
+      state.payments[existingPayIdx] = paymentRecord;
+    } else {
+      state.payments.unshift(paymentRecord);
+    }
+
+    const existingOrderIdx = (state.orders || []).findIndex(
+      (o) => o.orderId === orderId || (isFlagshipSofa && o.orderId === "RA98231")
+    );
 
     const orderRecord: OrderData = {
-      id: `ord_${orderId.toLowerCase()}`,
+      id: existingOrderIdx > -1 ? state.orders[existingOrderIdx].id : `ord_${orderId.toLowerCase()}`,
       orderId,
       paymentId,
       customerId: "cust_rahul",
@@ -1078,16 +1091,20 @@ export function processCheckout(params: {
       shippingAddress,
       items,
       totalAmount,
-      status: "CONFIRMED",
-      paymentStatus: "SUCCESS",
+      status: "PAYMENT_PENDING",
+      paymentStatus: "PENDING",
       paymentMethod,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
-    if (!state.orders) state.orders = [];
-    state.orders.unshift(orderRecord);
 
-    state.cart = [];
+    if (!state.orders) state.orders = [];
+    if (existingOrderIdx > -1) {
+      state.orders[existingOrderIdx] = orderRecord;
+    } else {
+      state.orders.unshift(orderRecord);
+    }
+
     saveStoredState(state);
 
     return {
