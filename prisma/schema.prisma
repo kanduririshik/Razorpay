@@ -1,0 +1,81 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Customer {
+  id                     String           @id @default(cuid())
+  name                   String
+  email                  String           @unique
+  phone                  String
+  lifetimeValue          Float            @default(0.0)
+  totalPayments          Int              @default(0)
+  successfulPayments     Int              @default(0)
+  failedPayments         Int              @default(0)
+  preferredPaymentMethod String           @default("UPI")
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  payments               Payment[]
+  recoveryActions        RecoveryAction[]
+}
+
+model Payment {
+  id            String           @id @default(cuid())
+  paymentId     String           @unique
+  customerId    String
+  amount        Float
+  currency      String           @default("INR")
+  status        String           // SUCCESS, FAILED, PENDING, RECOVERED
+  method        String           // UPI, Card, Netbanking, Wallet
+  failureReason String?          // Insufficient Funds, Card Declined, Timeout, Network Error, Bank Server Error, Authentication Failed
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  recoveryActions RecoveryAction[]
+  agentEvents     AgentEvent[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([paymentId])
+}
+
+model RecoveryAction {
+  id               String    @id @default(cuid())
+  paymentId        String
+  customerId       String
+  strategy         String    // RETRY_PAYMENT, SEND_PAYMENT_LINK, SUGGEST_ALTERNATIVE_METHOD, SEND_PERSONALIZED_REMINDER, HUMAN_REVIEW
+  priority         String    // LOW, MEDIUM, HIGH, CRITICAL
+  aiReason         String
+  message          String
+  expectedRecovery Float
+  actualRecovery   Float?
+  status           String    // PENDING, EXECUTED, RECOVERED, FAILED
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  payment  Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model AgentEvent {
+  id          String   @id @default(cuid())
+  paymentId   String
+  eventType   String   // PAYMENT_DETECTED, CUSTOMER_ANALYSIS, HISTORY_FOUND, VALUE_ANALYSIS, FAILURE_ANALYSIS, DECISION, STRATEGY_SELECTED, ACTION_EXECUTED, RECOVERY_SUCCESS
+  description String
+  metadata    String?  // JSON stringified payload
+  createdAt   DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+}
