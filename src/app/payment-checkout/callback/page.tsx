@@ -58,9 +58,28 @@ function CheckoutCallbackContent() {
 
           saveStoredState(state);
 
+          // If opened as popup/child tab from checkout, post message to parent and close
+          if (window.opener && !window.opener.closed) {
+            try {
+              window.opener.postMessage(
+                {
+                  type: "RAZORPAY_PAYMENT_FAILED",
+                  reason: failureReason,
+                  orderId,
+                  paymentId,
+                },
+                "*"
+              );
+              window.close();
+              return;
+            } catch (postErr) {
+              console.warn("Could not postMessage to opener:", postErr);
+            }
+          }
+
           setStatusText(`Payment failed: ${failureReason}. Redirecting...`);
           router.replace(
-            `/payment-failed?orderId=${encodeURIComponent(orderId)}&paymentId=${encodeURIComponent(paymentId)}&reason=${encodeURIComponent(failureReason)}`
+            `/checkout?failed=true&orderId=${encodeURIComponent(orderId)}&paymentId=${encodeURIComponent(paymentId)}&reason=${encodeURIComponent(failureReason)}`
           );
           return;
         }

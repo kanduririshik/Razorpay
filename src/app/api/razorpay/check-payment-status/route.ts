@@ -22,11 +22,19 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const config = getRazorpayConfig();
   if (!config.isConfigured) {
-    return NextResponse.json({
-      success: false,
-      configured: false,
-      message: "Razorpay is not configured",
-    });
+    try {
+      const prodRes = await fetch(
+        `https://razorpay-rishik.vercel.app/api/razorpay/check-payment-status?${req.nextUrl.searchParams.toString()}`
+      );
+      const prodData = await prodRes.json();
+      return NextResponse.json(prodData);
+    } catch (err) {
+      return NextResponse.json({
+        success: false,
+        configured: false,
+        message: "Razorpay is not configured locally and production fallback failed",
+      });
+    }
   }
 
   const { searchParams } = new URL(req.url);

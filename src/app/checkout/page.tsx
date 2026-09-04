@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDemoData } from "@/context/DemoDataContext";
 import { useCustomerAuth } from "@/context/CustomerAuthContext";
 import { FURNITURE_PRODUCTS } from "@/lib/data/initialData";
 import { formatINR } from "@/lib/utils";
 import { saveRazorpayLinkData } from "@/lib/data/store";
+import PaymentFailedModal from "@/components/PaymentFailedModal";
 import {
   CreditCard,
   QrCode,
@@ -19,10 +20,13 @@ import {
   Loader2,
   AlertCircle,
   Sparkles,
+  ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { cart, checkout } = useDemoData();
   const { customer } = useCustomerAuth();
 
@@ -36,6 +40,16 @@ export default function CheckoutPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Pop-up modal state
+  const [isFailedModalOpen, setIsFailedModalOpen] = useState(false);
+  const [modalFailureReason, setModalFailureReason] = useState("Payment was declined by the bank");
+  const [modalPaymentId, setModalPaymentId] = useState("PAY98231");
+  const [modalOrderId, setModalOrderId] = useState("RA98231");
+  const [activeShortUrl, setActiveShortUrl] = useState<string | null>(null);
+  const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
+
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     if (customer) {
       if (customer.name) setCustomerName(customer.name);
@@ -45,6 +59,38 @@ export default function CheckoutPage() {
     }
   }, [customer]);
 
+  // Detect failed=true from redirect or callback
+  useEffect(() => {
+    if (searchParams.get("failed") === "true") {
+      setIsFailedModalOpen(true);
+      const reason = searchParams.get("reason");
+      if (reason) setModalFailureReason(reason);
+      const pid = searchParams.get("paymentId");
+      if (pid) setModalPaymentId(pid);
+      const oid = searchParams.get("orderId");
+      if (oid) setModalOrderId(oid);
+    }
+  }, [searchParams]);
+
+  // Listen for window message from payment callback popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === "RAZORPAY_PAYMENT_FAILED") {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        setModalFailureReason(event.data.reason || "Payment was declined by the bank");
+        if (event.data.paymentId) setModalPaymentId(event.data.paymentId);
+        if (event.data.orderId) setModalOrderId(event.data.orderId);
+        setIsProcessing(false);
+        setIsFailedModalOpen(true);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
+
   const flagshipSofa = FURNITURE_PRODUCTS[0];
   const items = cart.length > 0 ? cart : [{ product: flagshipSofa, quantity: 1 }];
   const totalAmount = items.reduce(
@@ -52,22 +98,59 @@ export default function CheckoutPage() {
     0
   );
 
+  const startPollingPaymentStatus = (linkId: string, paymentId: string, orderId: string) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+    let count = 0;
+    pollIntervalRef.current = setInterval(async () => {
+      count++;
+      if (count > 50) {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        setIsProcessing(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/razorpay/check-payment-status?linkId=${encodeURIComponent(linkId)}&internalPaymentId=${encodeURIComponent(paymentId)}&internalOrderId=${encodeURIComponent(orderId)}`
+        );
+        const data = await res.json();
+
+        if (data.status === "FAILED") {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setIsProcessing(false);
+          setModalFailureReason(data.failureReason || "Payment was declined by the bank");
+          setIsFailedModalOpen(true);
+        } else if (data.status === "PAID" || data.status === "RECOVERED") {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setIsProcessing(false);
+          router.push(`/order/${orderId}?payment=success`);
+        }
+      } catch (err) {
+        // silent retry
+      }
+    }, 3000);
+  };
+
   const handlePlaceOrder = async () => {
     setErrorMessage(null);
     setIsProcessing(true);
 
     try {
-      // 1. Establish order and payment records in shared LocalStorage store
       const internalPaymentId = "PAY98231";
       const internalOrderId = "RA98231";
 
+      setModalPaymentId(internalPaymentId);
+      setModalOrderId(internalOrderId);
+
+      // 1. Establish order and payment records in shared LocalStorage store
       checkout({
         customerName,
         customerEmail,
         customerPhone,
         shippingAddress,
         paymentMethod,
-        simulateFailure: false, // DO NOT locally simulate failure!
+        simulateFailure: false, // REAL Razorpay checkout
         productId: items[0]?.product.id,
       });
 
@@ -103,12 +186,25 @@ export default function CheckoutPage() {
           testPaymentAmount: data.testPaymentAmount || 1000,
         });
 
-        // 3. Genuinely navigate to Razorpay-hosted checkout
-        window.location.href = data.shortUrl;
+        setActiveShortUrl(data.shortUrl);
+        setActiveLinkId(data.linkId);
+
+        // 3. Open Razorpay Checkout
+        // Try opening in new window/tab
+        const rzpWindow = window.open(data.shortUrl, "_blank");
+
+        // If popup blocker blocked the window or on mobile, navigate directly
+        if (!rzpWindow || rzpWindow.closed || typeof rzpWindow.closed === "undefined") {
+          window.location.href = data.shortUrl;
+          return;
+        }
+
+        // Window opened! Start polling server for real status
+        startPollingPaymentStatus(data.linkId, internalPaymentId, internalOrderId);
         return;
       }
 
-      // If Razorpay API call fails: never silently simulate
+      // If Razorpay API call fails: report error
       setIsProcessing(false);
       setErrorMessage(
         data.error || "Payment gateway unavailable. Please verify connection and try again."
@@ -122,6 +218,21 @@ export default function CheckoutPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Payment Failed Modal Pop-up */}
+      <PaymentFailedModal
+        isOpen={isFailedModalOpen}
+        onClose={() => setIsFailedModalOpen(false)}
+        orderId={modalOrderId}
+        paymentId={modalPaymentId}
+        amount={totalAmount}
+        testAmount={1000}
+        failureReason={modalFailureReason}
+        onRetry={() => {
+          setIsProcessing(false);
+          setActiveShortUrl(null);
+        }}
+      />
+
       {/* Breadcrumb */}
       <div className="flex items-center space-x-2 text-xs text-slate-400">
         <Link href="/" className="hover:text-amber-400">
@@ -159,6 +270,30 @@ export default function CheckoutPage() {
         </div>
       )}
 
+      {/* Razorpay Gateway Active Notice */}
+      {isProcessing && activeShortUrl && (
+        <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-xs space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5 text-amber-300 font-semibold">
+              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+              <span>Razorpay Checkout Opened in New Tab</span>
+            </div>
+            <a
+              href={activeShortUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold inline-flex items-center space-x-1.5 shadow"
+            >
+              <span>Click to Reopen Razorpay</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed">
+            In Razorpay, select <strong>UPI</strong> and enter <code className="text-amber-300 bg-black/40 px-1.5 py-0.5 rounded font-mono font-bold">failure@razorpay</code> to trigger the test decline. As soon as the transaction fails, the failure reason pop-up will appear automatically.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Form: Customer & Shipping & Payment */}
         <div className="lg:col-span-7 space-y-6">
@@ -168,134 +303,113 @@ export default function CheckoutPage() {
               <User className="w-5 h-5 text-amber-400" />
               <h2 className="text-base font-semibold text-white">Customer Information</h2>
             </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div className="space-y-1.5">
-                <label className="text-slate-400 font-mono uppercase tracking-wider block">
-                  Full Name
-                </label>
+                <label className="text-slate-400 block font-medium">Full Name</label>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
-
               <div className="space-y-1.5">
-                <label className="text-slate-400 font-mono uppercase tracking-wider block">
-                  Phone Number
-                </label>
+                <label className="text-slate-400 block font-medium">Phone (with country code)</label>
                 <input
                   type="text"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono focus:outline-none focus:border-amber-500/50"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors font-mono"
                 />
               </div>
-
-              <div className="sm:col-span-2 space-y-1.5">
-                <label className="text-slate-400 font-mono uppercase tracking-wider block">
-                  Email Address (Receipt &amp; Order Updates)
-                </label>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-slate-400 block font-medium">Email Address</label>
                 <input
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
             </div>
           </div>
 
-          {/* Delivery Address Card */}
+          {/* Shipping Address */}
           <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 shadow-lg">
             <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-800">
               <MapPin className="w-5 h-5 text-amber-400" />
-              <h2 className="text-base font-semibold text-white">White-Glove Delivery Address</h2>
+              <h2 className="text-base font-semibold text-white">Delivery Address</h2>
             </div>
-
-            <div className="space-y-1.5 text-xs">
-              <label className="text-slate-400 font-mono uppercase tracking-wider block">
-                Street Address, Flat / Villa No., Locality
-              </label>
+            <div className="text-xs space-y-1.5">
+              <label className="text-slate-400 block font-medium">White-Glove Delivery Location</label>
               <textarea
                 rows={2}
                 value={shippingAddress}
                 onChange={(e) => setShippingAddress(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 resize-none"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors resize-none"
               />
-              <p className="text-[11px] text-slate-500">
-                Complimentary white-glove inside delivery, unpacking, and room placement included.
-              </p>
             </div>
           </div>
 
-          {/* Payment Method Selector */}
+          {/* Payment Method Selection */}
           <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 shadow-lg">
             <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-800">
               <CreditCard className="w-5 h-5 text-amber-400" />
-              <h2 className="text-base font-semibold text-white">Payment Method</h2>
+              <h2 className="text-base font-semibold text-white">Select Payment Method</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <button
                 type="button"
                 onClick={() => setPaymentMethod("UPI")}
-                className={`p-4 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                className={`p-4 rounded-2xl border text-left flex items-start space-x-3 transition-all ${
                   paymentMethod === "UPI"
-                    ? "bg-amber-500/10 border-amber-500 text-white shadow-md shadow-amber-500/10"
-                    : "bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700"
+                    ? "bg-amber-500/10 border-amber-500/50 text-white"
+                    : "bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700"
                 }`}
               >
-                <div className="flex items-center space-x-3">
-                  <QrCode className="w-5 h-5 text-amber-400" />
-                  <div>
-                    <p className="font-semibold text-slate-200">UPI / QR</p>
-                    <p className="text-[10px] text-slate-400">Google Pay, PhonePe, Paytm, BHIM</p>
+                <QrCode className="w-5 h-5 text-amber-400 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-white">UPI / QR (Recommended)</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    GPay, PhonePe, Paytm & any UPI app
                   </div>
-                </div>
-                <div className="w-4 h-4 rounded-full border border-amber-500 flex items-center justify-center">
-                  {paymentMethod === "UPI" && <div className="w-2 h-2 rounded-full bg-amber-400" />}
                 </div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setPaymentMethod("Credit Card")}
-                className={`p-4 rounded-2xl border text-left flex items-center justify-between transition-all ${
-                  paymentMethod === "Credit Card"
-                    ? "bg-amber-500/10 border-amber-500 text-white shadow-md shadow-amber-500/10"
-                    : "bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700"
+                onClick={() => setPaymentMethod("CARD")}
+                className={`p-4 rounded-2xl border text-left flex items-start space-x-3 transition-all ${
+                  paymentMethod === "CARD"
+                    ? "bg-amber-500/10 border-amber-500/50 text-white"
+                    : "bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700"
                 }`}
               >
-                <div className="flex items-center space-x-3">
-                  <CreditCard className="w-5 h-5 text-amber-400" />
-                  <div>
-                    <p className="font-semibold text-slate-200">Card / NetBanking</p>
-                    <p className="text-[10px] text-slate-400">Visa, Mastercard, RuPay, All Banks</p>
+                <CreditCard className="w-5 h-5 text-amber-400 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-white">Credit / Debit Card</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Visa, Mastercard, RuPay & Amex
                   </div>
-                </div>
-                <div className="w-4 h-4 rounded-full border border-amber-500 flex items-center justify-center">
-                  {paymentMethod === "Credit Card" && <div className="w-2 h-2 rounded-full bg-amber-400" />}
                 </div>
               </button>
             </div>
           </div>
         </div>
 
-        {/* Right Form: Order Summary & Place Order */}
+        {/* Right Summary: Order Review & Razorpay Trigger */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl sticky top-28">
-            <h2 className="text-base font-semibold text-white pb-3 border-b border-slate-800">
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl sticky top-24">
+            <h3 className="text-lg font-serif font-bold text-white border-b border-slate-800 pb-3">
               Order Summary
-            </h2>
+            </h3>
 
-            {/* Cart Items */}
+            {/* Item List */}
             <div className="space-y-4">
               {items.map((item) => (
                 <div key={item.product.id} className="flex items-center space-x-3">
-                  <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-slate-800">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 shrink-0">
                     <img
                       src={item.product.image}
                       alt={item.product.name}
@@ -355,7 +469,7 @@ export default function CheckoutPage() {
               <button
                 onClick={handlePlaceOrder}
                 disabled={isProcessing}
-                className="w-full py-4 px-6 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-50 text-slate-950 font-extrabold rounded-2xl text-base shadow-xl shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center space-x-2.5"
+                className="w-full py-4 px-6 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-50 text-slate-950 font-extrabold rounded-2xl text-base shadow-xl shadow-amber-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center space-x-2.5 cursor-pointer"
               >
                 {isProcessing ? (
                   <>
@@ -387,5 +501,19 @@ export default function CheckoutPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[70vh] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+        </div>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
   );
 }

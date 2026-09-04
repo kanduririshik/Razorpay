@@ -1,10 +1,11 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useDemoData } from "@/context/DemoDataContext";
 import { formatINR } from "@/lib/utils";
+import PaymentFailedModal from "@/components/PaymentFailedModal";
 import {
   XCircle,
   RotateCcw,
@@ -20,6 +21,8 @@ function PaymentFailedContent() {
   const orderId = searchParams.get("orderId") || "RA98231";
   const queryReason = searchParams.get("reason");
 
+  const [isModalOpen, setIsModalOpen] = useState(true);
+
   const { getOrder, getPaymentById } = useDemoData();
   const order = getOrder(orderId);
   const paymentQuery = getPaymentById(paymentId);
@@ -34,6 +37,16 @@ function PaymentFailedContent() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-14">
+      <PaymentFailedModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        orderId={orderId}
+        paymentId={paymentId}
+        amount={amount}
+        testAmount={1000}
+        failureReason={failureReason}
+      />
+
       {/* Failure Container */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 shadow-2xl space-y-8 text-center relative overflow-hidden">
         {/* Ambient background glow */}

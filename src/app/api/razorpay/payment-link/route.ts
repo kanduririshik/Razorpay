@@ -66,9 +66,23 @@ export async function POST(req: NextRequest) {
     const config = getRazorpayConfig();
     const referenceId = generateRecoveryReferenceId(paymentId);
 
-    // ── SIMULATION FALLBACK: Razorpay genuinely not configured ────────────
+    // ── FALLBACK IF LOCAL KEYS NOT LOADED: Delegate to production gateway ────
     if (!config.isConfigured) {
-      console.log("[RecoverAI] Razorpay not configured — using simulation fallback");
+      console.log("[RecoverAI] Local Razorpay not configured — delegating to production Vercel gateway");
+      try {
+        const prodRes = await fetch("https://razorpay-rishik.vercel.app/api/razorpay/payment-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const prodData = await prodRes.json();
+        if (prodData.success && prodData.shortUrl) {
+          return NextResponse.json(prodData);
+        }
+      } catch (delegateErr) {
+        console.warn("[RecoverAI] Delegation failed, falling back to local simulation:", delegateErr);
+      }
+
       const appUrl = config.appUrl || "http://localhost:3000";
       const simulatedShortUrl = `${appUrl}/recovery/${paymentId}`;
       return NextResponse.json({
