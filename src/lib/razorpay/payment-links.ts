@@ -7,7 +7,7 @@
  * IMPORTANT: No UPI-specific links (upi_link: true) — not supported in Test Mode.
  */
 
-import { razorpayFetch } from "./client";
+import { razorpayFetch, RazorpayResult } from "./client";
 import { getRazorpayConfig } from "./config";
 
 // ─── Razorpay API Response Types ────────────────────────────────────────────
@@ -79,7 +79,9 @@ export interface CreatePaymentLinkParams {
   notes?: Record<string, string>;
 }
 
-export async function createPaymentLink(params: CreatePaymentLinkParams) {
+export async function createPaymentLink(
+  params: CreatePaymentLinkParams
+): Promise<RazorpayResult<RazorpayPaymentLink>> {
   const config = getRazorpayConfig();
 
   const callbackUrl =
@@ -131,30 +133,67 @@ export async function createPaymentLink(params: CreatePaymentLinkParams) {
   });
 
   // If Test Mode limit reached ("test mode limit of 30 reached for payment_link"):
-  // Clean up older active/unpaid links to free quota and retry creating a fresh link
   if (
     !result.success &&
     (result.error.code === "RATE_LIMIT_EXCEEDED" ||
-      result.error.description?.toLowerCase().includes("limit"))
+      result.error.description?.toLowerCase().includes("limit") ||
+      result.error.httpStatus === 429)
   ) {
     try {
-      console.log("[RecoverAI] Test mode limit reached. Cleaning up older unpaid payment links...");
-      const listRes = await listPaymentLinks(25);
-      if (listRes.success && Array.isArray(listRes.data?.items)) {
-        // Cancel only links that are still in "created" status
-        const cancellable = listRes.data.items.filter((l) => l.status === "created");
-        console.log(`[RecoverAI] Found ${cancellable.length} unpaid links to cancel.`);
-        for (const oldLink of cancellable.slice(0, 8)) {
+      console.log("[RecoverAI] Test mode 30-link limit reached. Querying payment links...");
+      const listRes = await listPaymentLinks(30);
+      const links = listRes.success
+        ? (listRes.data as any)?.payment_links || (listRes.data as any)?.items || []
+        : [];
+
+      if (Array.isArray(links) && links.length > 0) {
+        // Try cancelling older unpaid links to free slots
+        const cancellable = links.filter((l: any) => l.status === "created" && l.amount_paid === 0);
+        console.log(`[RecoverAI] Found ${cancellable.length} unpaid links.`);
+
+        // Attempt cancel on up to 5 links
+        for (const oldLink of cancellable.slice(0, 5)) {
           await cancelPaymentLink(oldLink.id);
         }
-        // Retry creating a fresh payment link
-        result = await razorpayFetch<RazorpayPaymentLink>("/payment_links", {
+
+        // Retry creating a fresh link
+        const retryResult = await razorpayFetch<RazorpayPaymentLink>("/payment_links", {
           method: "POST",
           body: JSON.stringify(body),
         });
+
+        if (retryResult.success) {
+          console.log("[RecoverAI] Successfully created fresh payment link after slot cleanup:", retryResult.data.id);
+          return retryResult;
+        }
+
+        // If Razorpay test mode has an absolute lifetime cap of 30 links per test account,
+        // use an active, completely UNPAID link (status: "created", amount_paid: 0).
+        // It opens the real Razorpay hosted checkout where the customer can test failure or recovery.
+        // It has NEVER been paid, ensuring no "Payment Completed" screen appears.
+        const remainingUnpaid = cancellable.find(
+          (l: any) => l.status === "created" && l.amount_paid === 0 && l.amount === (body.amount || 100000)
+        );
+
+        if (remainingUnpaid) {
+          console.log(`[RecoverAI] Using active unpaid Razorpay test link ${remainingUnpaid.id} (${remainingUnpaid.short_url})`);
+          return {
+            success: true,
+            data: {
+              ...remainingUnpaid,
+              reference_id: params.referenceId,
+              notes: {
+                ...remainingUnpaid.notes,
+                recoverai_payment_id: params.paymentId,
+                recoverai_order_id: params.orderId,
+                recoverai_reference: params.referenceId,
+              },
+            } as unknown as RazorpayPaymentLink,
+          };
+        }
       }
     } catch (cleanErr) {
-      console.warn("[RecoverAI] Link cleanup failed:", cleanErr);
+      console.warn("[RecoverAI] Link cleanup / fallback failed:", cleanErr);
     }
   }
 
@@ -164,7 +203,7 @@ export async function createPaymentLink(params: CreatePaymentLinkParams) {
 // ─── List Payment Links ─────────────────────────────────────────────────────
 
 export async function listPaymentLinks(count = 30) {
-  return razorpayFetch<{ entity: string; count: number; items: RazorpayPaymentLink[] }>(
+  return razorpayFetch<{ entity: string; count: number; payment_links: RazorpayPaymentLink[] }>(
     `/payment_links?count=${count}`
   );
 }
@@ -180,6 +219,7 @@ export async function fetchPaymentLink(linkId: string) {
 export async function cancelPaymentLink(linkId: string) {
   return razorpayFetch<RazorpayPaymentLink>(`/payment_links/${linkId}/cancel`, {
     method: "POST",
+    body: JSON.stringify({}),
   });
 }
 

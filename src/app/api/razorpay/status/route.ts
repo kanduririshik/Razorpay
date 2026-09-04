@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const config = getRazorpayConfig();
