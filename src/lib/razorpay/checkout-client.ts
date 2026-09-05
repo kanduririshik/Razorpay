@@ -41,6 +41,8 @@ export interface RazorpayCheckoutOptions {
     email?: string;
     contact?: string;
     method?: string;
+    /** UPI VPA — e.g. "success@razorpay" for test success, "failure@razorpay" for test failure */
+    vpa?: string;
   };
   notes?: Record<string, string>;
   theme?: {

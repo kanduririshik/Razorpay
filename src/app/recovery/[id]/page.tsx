@@ -95,6 +95,8 @@ export default function CustomerRecoveryPage() {
           name: "Rahul Sharma",
           email: "rahul.sharma@gmail.com",
           contact: "9820145892",
+          method: "upi",
+          vpa: "success@razorpay", // Razorpay Test Mode: UPI VPA that always succeeds
         },
         notes: {
           orderId,
@@ -246,15 +248,24 @@ export default function CustomerRecoveryPage() {
         </div>
 
         {/* Gateway Test Instructions */}
-        <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-xs space-y-2">
-          <div className="flex items-center space-x-2 text-blue-300 font-semibold font-mono text-[11px]">
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            <span>RAZORPAY TEST RECOVERY INSTRUCTION</span>
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-xs space-y-3">
+          <div className="flex items-center space-x-2 text-emerald-300 font-semibold font-mono text-[11px]">
+            <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+            <span>RAZORPAY TEST MODE — RECOVERY PAYMENT</span>
           </div>
-          <p className="text-slate-300 text-[11px] leading-relaxed">
-            Click <strong>Complete Payment — ₹1,000</strong> below. Razorpay Standard Checkout will open. Select <strong>UPI</strong>, enter <code className="text-amber-300 bg-black/60 px-1.5 py-0.5 rounded font-mono font-bold select-all">success@razorpay</code>, and complete the payment.
-          </p>
-          <p className="text-[10px] text-slate-400 border-t border-blue-500/20 pt-1">
+          <div className="space-y-1.5 text-slate-200 text-[11px] leading-relaxed">
+            <p className="font-bold text-emerald-300">✅ UPI is pre-selected with success@razorpay.</p>
+            <ol className="list-decimal list-inside space-y-1 text-slate-300">
+              <li>Click <strong>Complete Payment — ₹1,000</strong> below</li>
+              <li>Razorpay checkout opens — <strong className="text-emerald-300">UPI is already selected</strong></li>
+              <li>UPI ID field shows <code className="text-amber-300 bg-black/60 px-1.5 py-0.5 rounded font-mono font-bold select-all">success@razorpay</code></li>
+              <li>Click <strong>Pay Now</strong> — payment succeeds instantly</li>
+            </ol>
+            <p className="text-red-300 font-semibold text-[10px] border-t border-red-500/20 pt-1.5">
+              ⚠️ Do NOT switch to Wallet, Netbanking, or Card — those will fail in test mode. Use UPI only.
+            </p>
+          </div>
+          <p className="text-[10px] text-slate-400 border-t border-emerald-500/20 pt-1">
             Razorpay Test Mode — ₹1,000 test transaction. Order &amp; Recovery value: ₹32,999.
           </p>
         </div>
