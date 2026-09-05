@@ -98,23 +98,6 @@ export default function CustomerRecoveryPage() {
           method: "upi",
           vpa: "success@razorpay", // Razorpay Test Mode: UPI VPA that always succeeds
         },
-        // CRITICAL: Restrict to UPI only — hides Netbanking/Card/Wallet so user cannot accidentally fail
-        config: {
-          display: {
-            blocks: {
-              upi_block: {
-                name: "Pay via UPI",
-                instruments: [
-                  { method: "upi" }
-                ],
-              },
-            },
-            sequence: ["block.upi_block"],
-            preferences: {
-              show_default_blocks: false, // Hides Netbanking, Card, Wallet
-            },
-          },
-        },
         notes: {
           orderId,
           paymentId,
