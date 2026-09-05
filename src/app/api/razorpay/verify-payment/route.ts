@@ -1,57 +1,51 @@
 /**
  * POST /api/razorpay/verify-payment
  *
- * Server-side verification of a completed Razorpay payment.
- * Called from the /payment-recovery/callback page after redirect from Razorpay.
+ * Server-side verification of a completed Razorpay payment from Standard Checkout.
  *
- * For payment link redirects, Razorpay appends query params:
- *   razorpay_payment_id
- *   razorpay_payment_link_id
- *   razorpay_payment_link_reference_id
- *   razorpay_payment_link_status
- *   razorpay_signature
+ * Standard Checkout returns:
+ *   razorpay_payment_id: string
+ *   razorpay_order_id: string
+ *   razorpay_signature: string
  *
- * Request body:
- * {
- *   razorpayPaymentId: string;
- *   razorpayPaymentLinkId: string;
- *   razorpayPaymentLinkReferenceId: string;
- *   razorpayPaymentLinkStatus: string;
- *   razorpaySignature: string;
- *   recoveraiPaymentId: string;   — Our internal payment ID
- * }
- *
- * Response:
- * {
- *   success: boolean;
- *   verified: boolean;
- *   status: "RECOVERED" | "FAILED" | "PENDING";
- *   amount?: number;
- *   razorpayPaymentId?: string;
- *   message: string;
- *   mode: "live" | "simulation";
- * }
+ * Verification Rules:
+ * 1. HMAC-SHA256(razorpay_order_id + "|" + razorpay_payment_id, RAZORPAY_KEY_SECRET) === razorpay_signature
+ * 2. Fetch payment from Razorpay API to confirm status is "captured" or "authorized"
+ * 3. Verify payment.order_id === razorpay_order_id
+ * 4. IDEMPOTENCY: Check if razorpay_payment_id has already been processed.
+ *    If already processed, return success without double-crediting revenue.
+ * 5. Store verified recovery in SyncBuffer with original order value (₹32,999).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
-import { verifyPaymentById } from "@/lib/razorpay/payment-links";
-import { storeVerifiedRecovery } from "@/lib/razorpay/sync-buffer";
+import { fetchRazorpayPayment } from "@/lib/razorpay/orders";
+import {
+  storeVerifiedRecovery,
+  isPaymentProcessed,
+  markPaymentProcessed,
+} from "@/lib/razorpay/sync-buffer";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      razorpayPaymentId,
-      razorpayPaymentLinkId,
-      razorpayPaymentLinkReferenceId,
-      razorpayPaymentLinkStatus,
-      razorpaySignature,
-      recoveraiPaymentId,
-    } = body;
+
+    const razorpayPaymentId =
+      body.razorpay_payment_id || body.razorpayPaymentId;
+    const razorpayOrderId =
+      body.razorpay_order_id || body.razorpayOrderId;
+    const razorpaySignature =
+      body.razorpay_signature || body.razorpaySignature;
+
+    const internalPaymentId =
+      body.internalPaymentId || body.recoveraiPaymentId || body.paymentId || "PAY98231";
+    const internalOrderId =
+      body.internalOrderId || body.orderId || "RA98231";
+    const originalAmount =
+      Number(body.originalAmount) || 32999;
 
     const config = getRazorpayConfig();
 
@@ -66,78 +60,96 @@ export async function POST(req: NextRequest) {
         const prodData = await prodRes.json();
         return NextResponse.json(prodData);
       } catch (delegateErr) {
-        console.warn("[RecoverAI] Verify delegation failed, checking simulation:", delegateErr);
+        console.warn("[RecoverAI] Verify delegation failed:", delegateErr);
       }
 
-      // Accept simulation payment IDs (sim_payment_xxx) as verified
-      if (
-        recoveraiPaymentId &&
-        (razorpayPaymentId?.startsWith("sim_") || !razorpayPaymentId)
-      ) {
-        storeVerifiedRecovery({
-          paymentId: recoveraiPaymentId,
-          razorpayPaymentId: razorpayPaymentId ?? `sim_${Date.now()}`,
-          razorpayPaymentLinkId: razorpayPaymentLinkId ?? "sim_link",
-          amount: 0,
-          status: "RECOVERED",
-          verifiedAt: new Date().toISOString(),
-          source: "callback",
-        });
-        return NextResponse.json({
-          success: true,
-          verified: true,
-          status: "RECOVERED",
-          message: "Simulation payment verified successfully.",
-          mode: "simulation",
-        });
-      }
       return NextResponse.json(
-        { success: false, verified: false, status: "FAILED", message: "Razorpay not configured and no simulation ID provided." },
+        { success: false, verified: false, status: "FAILED", message: "Razorpay credentials not configured." },
+        { status: 503 }
+      );
+    }
+
+    // ── Validate Required Signature Parameters ──────────────────────────────
+    if (!razorpayPaymentId || !razorpaySignature) {
+      return NextResponse.json(
+        { success: false, verified: false, status: "FAILED", message: "Missing Razorpay payment ID or signature." },
         { status: 400 }
       );
     }
 
-    // ── LIVE: Verify Razorpay signature ───────────────────────────────────
-    if (!razorpayPaymentId || !razorpayPaymentLinkId || !razorpaySignature) {
-      return NextResponse.json(
-        { success: false, verified: false, status: "FAILED", message: "Missing Razorpay parameters." },
-        { status: 400 }
-      );
+    // ── IDEMPOTENCY CHECK ───────────────────────────────────────────────────
+    if (isPaymentProcessed(razorpayPaymentId)) {
+      console.log(`[RecoverAI] Idempotency: Payment ${razorpayPaymentId} already processed.`);
+      return NextResponse.json({
+        success: true,
+        verified: true,
+        status: "RECOVERED",
+        idempotent: true,
+        amount: originalAmount,
+        razorpayPaymentId,
+        razorpayOrderId,
+        message: "Payment verified successfully (idempotent duplicate request).",
+        mode: config.keyId.startsWith("rzp_test_") ? "test" : "live",
+      });
     }
 
-    // Signature verification: HMAC-SHA256 of "payment_link_id|payment_link_reference_id|payment_link_status|razorpay_payment_id"
-    const expectedSignaturePayload = [
-      razorpayPaymentLinkId,
-      razorpayPaymentLinkReferenceId,
-      razorpayPaymentLinkStatus,
-      razorpayPaymentId,
-    ].join("|");
+    // ── SIGNATURE VERIFICATION ──────────────────────────────────────────────
+    // For Standard Checkout with Orders API:
+    // Signature = HMAC-SHA256(order_id + "|" + payment_id, secret)
+    let isSignatureValid = false;
 
-    const expectedSignature = createHmac("sha256", config.keySecret)
-      .update(expectedSignaturePayload)
-      .digest("hex");
+    if (razorpayOrderId) {
+      const orderPayload = `${razorpayOrderId}|${razorpayPaymentId}`;
+      const expectedSignature = createHmac("sha256", config.keySecret)
+        .update(orderPayload)
+        .digest("hex");
 
-    if (expectedSignature !== razorpaySignature) {
-      console.error("[RecoverAI] Signature mismatch", {
-        expected: expectedSignature,
-        received: razorpaySignature,
+      try {
+        isSignatureValid = timingSafeEqual(
+          Buffer.from(expectedSignature),
+          Buffer.from(razorpaySignature)
+        );
+      } catch {
+        isSignatureValid = expectedSignature === razorpaySignature;
+      }
+    } else if (body.razorpayPaymentLinkId) {
+      // Backward compatibility for payment link signatures if ever invoked
+      const linkPayload = [
+        body.razorpayPaymentLinkId,
+        body.razorpayPaymentLinkReferenceId || "",
+        body.razorpayPaymentLinkStatus || "",
+        razorpayPaymentId,
+      ].join("|");
+
+      const expectedSignature = createHmac("sha256", config.keySecret)
+        .update(linkPayload)
+        .digest("hex");
+
+      isSignatureValid = expectedSignature === razorpaySignature;
+    }
+
+    if (!isSignatureValid) {
+      console.error("[RecoverAI] Signature verification failed:", {
+        razorpayOrderId,
+        razorpayPaymentId,
       });
       return NextResponse.json(
-        { success: false, verified: false, status: "FAILED", message: "Signature verification failed. Payment not verified." },
+        { success: false, verified: false, status: "FAILED", message: "Signature verification failed. Invalid Razorpay signature." },
         { status: 400 }
       );
     }
 
-    // ── Fetch actual payment status from Razorpay API ────────────────────
-    const paymentResult = await verifyPaymentById(razorpayPaymentId);
+    // ── VERIFY RAZORPAY PAYMENT STATUS VIA API ──────────────────────────────
+    const paymentResult = await fetchRazorpayPayment(razorpayPaymentId);
 
     if (!paymentResult.success) {
+      console.error("[RecoverAI] Could not fetch payment from Razorpay API:", paymentResult.error);
       return NextResponse.json(
         {
           success: false,
           verified: false,
           status: "FAILED",
-          message: `Could not fetch payment from Razorpay: ${paymentResult.error.description}`,
+          message: `Razorpay API error: ${paymentResult.error.description}`,
         },
         { status: 502 }
       );
@@ -145,41 +157,58 @@ export async function POST(req: NextRequest) {
 
     const payment = paymentResult.data;
 
-    if (payment.status === "captured" || payment.status === "authorized") {
-      // Store in sync buffer so client can poll and update LocalStorage
-      storeVerifiedRecovery({
-        paymentId: recoveraiPaymentId,
-        razorpayPaymentId,
-        razorpayPaymentLinkId,
-        amount: Math.round(payment.amount / 100), // Convert paise to rupees
-        status: "RECOVERED",
-        verifiedAt: new Date().toISOString(),
-        source: "callback",
+    // Verify order ID matches if order exists
+    if (razorpayOrderId && payment.order_id && payment.order_id !== razorpayOrderId) {
+      console.error("[RecoverAI] Order ID mismatch:", {
+        expected: razorpayOrderId,
+        received: payment.order_id,
       });
+      return NextResponse.json(
+        { success: false, verified: false, status: "FAILED", message: "Payment order ID mismatch." },
+        { status: 400 }
+      );
+    }
 
-      const isTestMode = config.keyId.startsWith("rzp_test_");
-      const resolvedMode: "live" | "test" = isTestMode ? "test" : "live";
-
+    // Verify payment is successful (captured or authorized)
+    if (payment.status !== "captured" && payment.status !== "authorized") {
+      console.warn(`[RecoverAI] Payment status not successful: ${payment.status}`);
       return NextResponse.json({
         success: true,
-        verified: true,
-        status: "RECOVERED",
-        amount: Math.round(payment.amount / 100),
-        razorpayPaymentId,
-        message: "Payment verified successfully. Recovery confirmed.",
-        mode: resolvedMode,
+        verified: false,
+        status: payment.status === "failed" ? "FAILED" : "PENDING",
+        message: `Payment status in Razorpay: ${payment.status}`,
+        mode: config.keyId.startsWith("rzp_test_") ? "test" : "live",
       });
     }
 
+    // ── MARK PROCESSED & STORE RECOVERY ─────────────────────────────────────
+    markPaymentProcessed(razorpayPaymentId);
+
+    // Store in SyncBuffer with full original order value (₹32,999)
+    storeVerifiedRecovery({
+      paymentId: internalPaymentId,
+      razorpayPaymentId,
+      razorpayOrderId: razorpayOrderId || payment.order_id,
+      amount: originalAmount, // Business value ₹32,999 recovered
+      status: "RECOVERED",
+      verifiedAt: new Date().toISOString(),
+      source: "checkout_verify",
+    });
+
     const isTestMode = config.keyId.startsWith("rzp_test_");
-    const resolvedMode: "live" | "test" = isTestMode ? "test" : "live";
+
+    console.log(`[RecoverAI] ✅ Recovery verified for ${internalPaymentId} (${internalOrderId}) — ₹${originalAmount}`);
 
     return NextResponse.json({
       success: true,
-      verified: false,
-      status: payment.status === "failed" ? "FAILED" : "PENDING",
-      message: `Payment status from Razorpay: ${payment.status}`,
-      mode: resolvedMode,
+      verified: true,
+      status: "RECOVERED",
+      amount: originalAmount,
+      testTransactionAmount: Math.round(payment.amount / 100),
+      razorpayPaymentId,
+      razorpayOrderId: razorpayOrderId || payment.order_id,
+      message: "Payment verified successfully. Recovery confirmed.",
+      mode: isTestMode ? "test" : "live",
     });
   } catch (err: any) {
     console.error("[RecoverAI] /api/razorpay/verify-payment error:", err);

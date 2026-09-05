@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { SimulationStep } from "@/lib/types";
-import { initiateRecoveryAction, getStoredState, saveRazorpayLinkData } from "@/lib/data/store";
+import { initiateRecoveryAction, getStoredState } from "@/lib/data/store";
 
 interface SimulationContextType {
   isModalOpen: boolean;
@@ -109,16 +109,6 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       }));
       setStages(updatedStages);
 
-      // Track the real payment link result
-      let razorpayLinkResult: {
-        shortUrl: string;
-        linkId: string;
-        mode: "live" | "test" | "simulation";
-        referenceId: string;
-        originalAmount?: number;
-        testPaymentAmount?: number;
-      } | null = null;
-
       try {
         // Step-by-step visual animation through stages
         for (let i = 0; i < DEFAULT_STAGES.length; i++) {
@@ -144,90 +134,31 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             }))
           );
 
-          // On ACTING stage (index 4): call Razorpay payment-link API
+          // On ACTING stage (index 4): provision recovery action for customer
           if (i === 4) {
-            try {
-              // Get payment + customer data from local store
-              const state = getStoredState();
-              const payment = state.payments.find(
-                (p) => p.id === targetPaymentId || p.paymentId === targetPaymentId
-              );
-              const customer = payment
-                ? state.customers.find((c) => c.id === payment.customerId)
-                : null;
-              const order = state.orders?.find(
-                (o) => o.paymentId === (payment?.paymentId ?? targetPaymentId)
-              );
-
-              if (payment && customer) {
-                const rawDigits = (customer.phone || "").replace(/\D/g, "");
-                const normalizedContact =
-                  rawDigits.length >= 8 && rawDigits.length <= 14 ? rawDigits : "9820145892";
-
-                const linkRes = await fetch("/api/razorpay/payment-link", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    paymentId: payment.paymentId,
-                    orderId: order?.orderId ?? "RA" + payment.paymentId.replace("PAY", ""),
-                    amount: payment.amount,
-                    originalAmount: payment.amount,
-                    type: "recovery",
-                    currency: payment.currency ?? "INR",
-                    customerName: customer.name,
-                    customerEmail: customer.email,
-                    customerPhone: normalizedContact,
-                    description: `Payment recovery for ${order?.items?.[0]?.productName ?? "Modern 3-Seater Sofa"} — RecoverAI`,
-                  }),
-                });
-
-                if (linkRes.ok) {
-                  const linkData = await linkRes.json();
-                  if (linkData.success) {
-                    razorpayLinkResult = {
-                      shortUrl: linkData.shortUrl,
-                      linkId: linkData.linkId,
-                      mode: linkData.mode,
-                      referenceId: linkData.referenceId,
-                      originalAmount: linkData.originalAmount,
-                      testPaymentAmount: linkData.testPaymentAmount,
-                    };
-                    // Persist to shared LocalStorage store immediately
-                    saveRazorpayLinkData(payment.paymentId, {
-                      linkId: linkData.linkId,
-                      shortUrl: linkData.shortUrl,
-                      mode: linkData.mode,
-                      referenceId: linkData.referenceId,
-                      originalAmount: linkData.originalAmount,
-                      testPaymentAmount: linkData.testPaymentAmount,
-                    });
-                    // Update ACTING stage description with link info
-                    setStages((prev) =>
-                      prev.map((s, idx) =>
-                        idx === 4
-                          ? {
-                              ...s,
-                              description:
-                                linkData.mode === "live" || linkData.mode === "test"
-                                  ? `✅ Razorpay Payment Link created: ${linkData.shortUrl} (₹${linkData.testPaymentAmount})`
-                                  : `Recovery link dispatched: ${linkData.shortUrl}`,
-                            }
-                          : s
-                      )
-                    );
-                  }
-                }
-              }
-            } catch (linkErr) {
-              console.warn("[RecoverAI] Payment link creation error (non-fatal):", linkErr);
-            }
-            // Extra delay on ACTING stage for visual effect
-            await new Promise((res) => setTimeout(res, 1000));
+            setStages((prev) =>
+              prev.map((s, idx) =>
+                idx === 4
+                  ? {
+                      ...s,
+                      description: `✅ Prepared Razorpay Standard Checkout recovery channel for customer (Order #RA98231)`,
+                    }
+                  : s
+              )
+            );
+            // Delay on ACTING stage for visual telemetry effect
+            await new Promise((res) => setTimeout(res, 900));
           } else {
             // 650ms delay per stage
             await new Promise((res) => setTimeout(res, 650));
           }
         }
+
+        // Fetch latest state to get actual customer and payment amount
+        const state = getStoredState();
+        const payment = state.payments.find(
+          (p) => p.id === targetPaymentId || p.paymentId === targetPaymentId
+        );
 
         // ── Initiate recovery in LocalStorage (WAITING_CUSTOMER state) ──
         let initiateResult: any;
@@ -236,11 +167,6 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           console.warn("[RecoverAI] initiateRecoveryAction failed:", e);
         }
-
-        const state = getStoredState();
-        const payment = state.payments.find(
-          (p) => p.id === targetPaymentId || p.paymentId === targetPaymentId
-        );
 
         const data = {
           success: true,
@@ -252,12 +178,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             recoveryProbability: 0.87,
             strategy: "SEND_PAYMENT_LINK",
             reason: "High-value customer with transient failure.",
-            // Use the real Razorpay link if available, otherwise fall back to /recovery/[id]
-            simulatedLink: razorpayLinkResult?.shortUrl ?? initiateResult?.recoveryUrl ?? `/recovery/${targetPaymentId}`,
-            razorpayLinkMode: razorpayLinkResult?.mode ?? "simulation",
-            razorpayLinkId: razorpayLinkResult?.linkId,
-            originalAmount: razorpayLinkResult?.originalAmount ?? payment?.amount ?? 32999,
-            testPaymentAmount: razorpayLinkResult?.testPaymentAmount ?? 1000,
+            simulatedLink: `/recovery/${targetPaymentId}`,
+            razorpayLinkMode: "test",
+            originalAmount: payment?.amount ?? 32999,
+            testPaymentAmount: 1000,
           },
         };
 
@@ -280,10 +204,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         const amountStr = data.simulation?.amount
           ? `₹${data.simulation.amount.toLocaleString("en-IN")}`
           : "₹32,999";
-        const modeStr =
-          razorpayLinkResult?.mode === "live"
-            ? "Real Razorpay payment link sent."
-            : "Recovery link dispatched.";
+        const modeStr = "Standard Checkout recovery channel dispatched.";
         setToastMessage(`${modeStr} Awaiting customer payment of ${amountStr}.`);
 
         // Auto dismiss toast after 6s

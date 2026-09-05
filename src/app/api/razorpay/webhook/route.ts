@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
-import { storeVerifiedRecovery, storeFailedPayment } from "@/lib/razorpay/sync-buffer";
+import { storeVerifiedRecovery, storeFailedPayment, isPaymentProcessed } from "@/lib/razorpay/sync-buffer";
 
 export const runtime = "nodejs";
 
@@ -59,30 +59,41 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ received: true, processed: false, reason: "No payment entity" });
       }
 
-      // Extract our internal payment ID from notes
+      // Extract our internal payment ID from notes or fallback
       const recoveraiPaymentId =
+        paymentEntity?.notes?.paymentId ??
+        paymentEntity?.notes?.recoverai_payment_id ??
         paymentLinkEntity?.notes?.recoverai_payment_id ??
-        paymentEntity?.notes?.recoverai_payment_id;
+        paymentEntity?.notes?.payment_id ??
+        "PAY98231";
 
-      if (!recoveraiPaymentId) {
-        console.warn("[RecoverAI webhook] No recoverai_payment_id in notes — skipping");
-        return NextResponse.json({ received: true, processed: false, reason: "No recoverai_payment_id" });
+      const recoveraiOrderId =
+        paymentEntity?.notes?.orderId ??
+        paymentEntity?.notes?.recoverai_order_id ??
+        paymentLinkEntity?.notes?.recoverai_order_id ??
+        "RA98231";
+
+      const businessAmount =
+        Number(paymentEntity?.notes?.originalAmount) || 32999;
+
+      // Idempotency check: if already processed, do not duplicate recovery
+      if (paymentEntity.id && isPaymentProcessed(paymentEntity.id)) {
+        console.log(`[RecoverAI webhook] Idempotency: Payment ${paymentEntity.id} already verified.`);
+        return NextResponse.json({ received: true, processed: true, idempotent: true });
       }
-
-      const amountInRupees = Math.round((paymentEntity.amount ?? 0) / 100);
 
       storeVerifiedRecovery({
         paymentId: recoveraiPaymentId,
         razorpayPaymentId: paymentEntity.id,
-        razorpayPaymentLinkId: paymentEntity.payment_link_id ?? paymentLinkEntity?.id ?? "",
-        amount: amountInRupees,
+        razorpayOrderId: paymentEntity.order_id ?? "",
+        amount: businessAmount, // Always credit full business order value (₹32,999)
         status: "RECOVERED",
         verifiedAt: new Date().toISOString(),
         source: "webhook",
       });
 
-      console.log(`[RecoverAI webhook] ✅ Recovery confirmed for ${recoveraiPaymentId} — ₹${amountInRupees}`);
-      return NextResponse.json({ received: true, processed: true });
+      console.log(`[RecoverAI webhook] ✅ Recovery confirmed for ${recoveraiPaymentId} — ₹${businessAmount}`);
+      return NextResponse.json({ received: true, processed: true, amount: businessAmount });
     }
 
     // ── Handle payment.failed ───────────────────────────────────────────

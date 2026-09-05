@@ -15,11 +15,12 @@
 export interface VerifiedRecoveryEvent {
   paymentId: string;              // RecoverAI payment ID (e.g. "PAY98231")
   razorpayPaymentId: string;      // Razorpay payment ID (e.g. "pay_xxx")
-  razorpayPaymentLinkId: string;  // Razorpay link ID (e.g. "plink_xxx")
-  amount: number;                 // Amount in rupees
+  razorpayPaymentLinkId?: string; // Razorpay link ID (if applicable)
+  razorpayOrderId?: string;       // Razorpay order ID (e.g. "order_xxx")
+  amount: number;                 // Amount in rupees (business value ₹32,999)
   status: "RECOVERED";
   verifiedAt: string;             // ISO timestamp
-  source: "webhook" | "callback";
+  source: "webhook" | "callback" | "checkout_verify";
 }
 
 export interface FailedPaymentEvent {
@@ -27,21 +28,39 @@ export interface FailedPaymentEvent {
   orderId: string;                // e.g. "RA98231"
   razorpayPaymentId?: string;
   razorpayPaymentLinkId?: string;
+  razorpayOrderId?: string;
   amount: number;
   failureReason: string;          // Real Razorpay error description
   errorCode?: string;             // Real Razorpay error code
+  errorReason?: string;
+  errorStep?: string;
+  errorSource?: string;
   status: "FAILED";
   timestamp: string;
-  source: "webhook" | "status_check" | "callback";
+  source: "webhook" | "status_check" | "callback" | "checkout_client";
 }
 
 // In-memory event buffers (per-server-instance)
 const eventBuffer: Map<string, VerifiedRecoveryEvent> = new Map();
 const failedBuffer: Map<string, FailedPaymentEvent> = new Map();
+const processedPayments: Set<string> = new Set(); // Idempotency tracker for razorpayPaymentId
+
+/** Check if a razorpay payment ID has already been verified/recovered */
+export function isPaymentProcessed(razorpayPaymentId: string): boolean {
+  return processedPayments.has(razorpayPaymentId);
+}
+
+/** Mark a razorpay payment ID as processed */
+export function markPaymentProcessed(razorpayPaymentId: string): void {
+  processedPayments.add(razorpayPaymentId);
+}
 
 /** Store a verified recovery event (called from webhook or callback handler) */
 export function storeVerifiedRecovery(event: VerifiedRecoveryEvent): void {
   eventBuffer.set(event.paymentId, event);
+  if (event.razorpayPaymentId) {
+    processedPayments.add(event.razorpayPaymentId);
+  }
 }
 
 /** Retrieve a verified recovery event by RecoverAI payment ID */

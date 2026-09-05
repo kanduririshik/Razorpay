@@ -1,14 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDemoData } from "@/context/DemoDataContext";
 import { useCustomerAuth } from "@/context/CustomerAuthContext";
 import { FURNITURE_PRODUCTS } from "@/lib/data/initialData";
 import { formatINR } from "@/lib/utils";
-import { saveRazorpayLinkData } from "@/lib/data/store";
 import PaymentFailedModal from "@/components/PaymentFailedModal";
+import {
+  loadRazorpayCheckoutScript,
+  RazorpayCheckoutOptions,
+  RazorpayFailureResponse,
+  RazorpaySuccessResponse,
+} from "@/lib/razorpay/checkout-client";
 import {
   CreditCard,
   QrCode,
@@ -20,8 +25,6 @@ import {
   Loader2,
   AlertCircle,
   Sparkles,
-  ExternalLink,
-  RefreshCw,
 } from "lucide-react";
 
 function CheckoutContent() {
@@ -45,10 +48,12 @@ function CheckoutContent() {
   const [modalFailureReason, setModalFailureReason] = useState("Payment was declined by the bank");
   const [modalPaymentId, setModalPaymentId] = useState("PAY98231");
   const [modalOrderId, setModalOrderId] = useState("RA98231");
-  const [activeShortUrl, setActiveShortUrl] = useState<string | null>(null);
-  const [activeLinkId, setActiveLinkId] = useState<string | null>(null);
+  const [modalRzpPaymentId, setModalRzpPaymentId] = useState<string | undefined>(undefined);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Preload checkout script on page load
+  useEffect(() => {
+    loadRazorpayCheckoutScript().catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (customer) {
@@ -59,7 +64,7 @@ function CheckoutContent() {
     }
   }, [customer]);
 
-  // Detect failed=true from redirect or callback
+  // Detect failed=true from redirect or query
   useEffect(() => {
     if (searchParams.get("failed") === "true") {
       setIsFailedModalOpen(true);
@@ -69,27 +74,10 @@ function CheckoutContent() {
       if (pid) setModalPaymentId(pid);
       const oid = searchParams.get("orderId");
       if (oid) setModalOrderId(oid);
+      const rzpId = searchParams.get("razorpayPaymentId");
+      if (rzpId) setModalRzpPaymentId(rzpId);
     }
   }, [searchParams]);
-
-  // Listen for window message from payment callback popup
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === "RAZORPAY_PAYMENT_FAILED") {
-        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-        setModalFailureReason(event.data.reason || "Payment was declined by the bank");
-        if (event.data.paymentId) setModalPaymentId(event.data.paymentId);
-        if (event.data.orderId) setModalOrderId(event.data.orderId);
-        setIsProcessing(false);
-        setIsFailedModalOpen(true);
-      }
-    };
-    window.addEventListener("message", handleMessage);
-    return () => {
-      window.removeEventListener("message", handleMessage);
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, []);
 
   const flagshipSofa = FURNITURE_PRODUCTS[0];
   const items = cart.length > 0 ? cart : [{ product: flagshipSofa, quantity: 1 }];
@@ -97,40 +85,6 @@ function CheckoutContent() {
     (acc, item) => acc + item.product.price * item.quantity,
     0
   );
-
-  const startPollingPaymentStatus = (linkId: string, paymentId: string, orderId: string) => {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-    let count = 0;
-    pollIntervalRef.current = setInterval(async () => {
-      count++;
-      if (count > 50) {
-        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-        setIsProcessing(false);
-        return;
-      }
-
-      try {
-        const res = await fetch(
-          `/api/razorpay/check-payment-status?linkId=${encodeURIComponent(linkId)}&internalPaymentId=${encodeURIComponent(paymentId)}&internalOrderId=${encodeURIComponent(orderId)}`
-        );
-        const data = await res.json();
-
-        if (data.status === "FAILED") {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          setIsProcessing(false);
-          setModalFailureReason(data.failureReason || "Payment was declined by the bank");
-          setIsFailedModalOpen(true);
-        } else if (data.status === "PAID" || data.status === "RECOVERED") {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          setIsProcessing(false);
-          router.push(`/order/${orderId}?payment=success`);
-        }
-      } catch (err) {
-        // silent retry
-      }
-    }, 3000);
-  };
 
   const handlePlaceOrder = async () => {
     setErrorMessage(null);
@@ -150,63 +104,136 @@ function CheckoutContent() {
         customerPhone,
         shippingAddress,
         paymentMethod,
-        simulateFailure: false, // REAL Razorpay checkout
+        simulateFailure: false, // REAL Razorpay gateway
         productId: items[0]?.product.id,
       });
 
-      // 2. Call server to create a real Razorpay Test Mode Standard Payment Link
-      const callbackUrl = `${window.location.origin}/payment-checkout/callback?orderId=${internalOrderId}&paymentId=${internalPaymentId}`;
+      // 2. Ensure Razorpay Standard Checkout script is ready
+      const scriptReady = await loadRazorpayCheckoutScript();
+      if (!scriptReady || !window.Razorpay) {
+        throw new Error("Could not initialize Razorpay checkout. Please check internet connection.");
+      }
 
+      // 3. Create a real Razorpay Order via server Orders API
       const normalizedPhone = customerPhone.replace(/\D/g, "");
+      const cleanContact =
+        normalizedPhone.length >= 8 && normalizedPhone.length <= 14 ? normalizedPhone : "9820145892";
 
-      const res = await fetch("/api/razorpay/payment-link", {
+      const orderRes = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          paymentId: internalPaymentId,
-          orderId: internalOrderId,
           type: "initial_checkout",
-          amount: totalAmount,
+          orderId: internalOrderId,
+          paymentId: internalPaymentId,
           originalAmount: totalAmount,
-          currency: "INR",
-          customerName,
-          customerEmail,
-          customerPhone: normalizedPhone.length >= 8 && normalizedPhone.length <= 14 ? normalizedPhone : "9820145892",
-          callbackUrl,
-          description: `Order ${internalOrderId} for ${items[0]?.product.name || "Modern 3-Seater Sofa"} — Slander's Furniture Store`,
+          customer: {
+            name: customerName,
+            email: customerEmail,
+            contact: cleanContact,
+          },
         }),
       });
 
-      const data = await res.json();
+      const orderData = await orderRes.json();
 
-      if (data.success && data.shortUrl) {
-        // Persist real link parameters
-        saveRazorpayLinkData(internalPaymentId, {
-          linkId: data.linkId,
-          shortUrl: data.shortUrl,
-          mode: data.mode,
-          referenceId: data.referenceId,
-          originalAmount: data.originalAmount || totalAmount,
-          testPaymentAmount: data.testPaymentAmount || 1000,
-        });
-
-        setActiveShortUrl(data.shortUrl);
-        setActiveLinkId(data.linkId);
-
-        // 3. Immediately navigate to official Razorpay hosted checkout
-        window.location.href = data.shortUrl;
-        return;
+      if (!orderData.success || !orderData.orderId) {
+        throw new Error(orderData.error || "Failed to create Razorpay payment order.");
       }
 
-      // If Razorpay API call fails: report error
-      setIsProcessing(false);
-      setErrorMessage(
-        data.error || "Payment gateway unavailable. Please verify connection and try again."
-      );
+      // 4. Initialize official Razorpay Standard Checkout modal
+      const options: RazorpayCheckoutOptions = {
+        key: orderData.keyId,
+        amount: orderData.amount, // 100000 paise = ₹1,000 test cap
+        currency: orderData.currency || "INR",
+        order_id: orderData.orderId,
+        name: "Slander's Furniture Store",
+        description: `Order #${internalOrderId} — Modern 3-Seater Sofa`,
+        prefill: {
+          name: customerName,
+          email: customerEmail,
+          contact: cleanContact,
+        },
+        notes: {
+          orderId: internalOrderId,
+          paymentId: internalPaymentId,
+          originalAmount: totalAmount.toString(),
+          testAmount: "1000",
+        },
+        theme: {
+          color: "#0f172a",
+        },
+        modal: {
+          ondismiss: () => {
+            console.log("[Checkout] Razorpay modal closed by customer");
+            setIsProcessing(false);
+          },
+        },
+        handler: async (response: RazorpaySuccessResponse) => {
+          setIsProcessing(false);
+          // If customer completed payment successfully
+          router.push(`/order/${internalOrderId}?payment=success`);
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+
+      // 5. Handle official Razorpay payment failure event
+      rzp.on("payment.failed", async (response: RazorpayFailureResponse) => {
+        setIsProcessing(false);
+
+        const errorDesc =
+          response.error?.description ||
+          response.error?.reason ||
+          "Payment was declined by the bank";
+        const rzpPaymentId = response.error?.metadata?.payment_id || "";
+        const rzpOrderId = response.error?.metadata?.order_id || orderData.orderId;
+
+        console.log("[Checkout] Gateway payment failed:", {
+          errorDesc,
+          rzpPaymentId,
+          rzpOrderId,
+          code: response.error?.code,
+        });
+
+        // Immediately send telemetry to server
+        try {
+          await fetch("/api/razorpay/record-failure", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpayOrderId: rzpOrderId,
+              razorpayPaymentId: rzpPaymentId,
+              errorCode: response.error?.code || "PAYMENT_FAILED",
+              errorDescription: errorDesc,
+              errorReason: response.error?.reason || "",
+              errorStep: response.error?.step || "",
+              errorSource: response.error?.source || "",
+              internalOrderId,
+              internalPaymentId,
+              amount: 1000,
+            }),
+          });
+        } catch (telemetryErr) {
+          console.warn("[Checkout] Failed to record failure telemetry:", telemetryErr);
+        }
+
+        setModalFailureReason(errorDesc);
+        setModalRzpPaymentId(rzpPaymentId);
+        setIsFailedModalOpen(true);
+
+        // Navigate to payment failed page
+        router.push(
+          `/payment-failed?orderId=${encodeURIComponent(internalOrderId)}&paymentId=${encodeURIComponent(internalPaymentId)}&reason=${encodeURIComponent(errorDesc)}&razorpayPaymentId=${encodeURIComponent(rzpPaymentId)}`
+        );
+      });
+
+      // 6. Open the official Razorpay Checkout interface
+      rzp.open();
     } catch (err: any) {
-      console.error("[Checkout] Error initiating Razorpay payment:", err);
+      console.error("[Checkout] Error initiating Razorpay Standard Checkout:", err);
       setIsProcessing(false);
-      setErrorMessage("Payment gateway unavailable. Please try again.");
+      setErrorMessage(err.message || "Payment gateway unavailable. Please try again.");
     }
   };
 
@@ -223,7 +250,6 @@ function CheckoutContent() {
         failureReason={modalFailureReason}
         onRetry={() => {
           setIsProcessing(false);
-          setActiveShortUrl(null);
         }}
       />
 
@@ -264,30 +290,6 @@ function CheckoutContent() {
         </div>
       )}
 
-      {/* Razorpay Gateway Active Notice */}
-      {isProcessing && activeShortUrl && (
-        <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-xs space-y-3 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5 text-amber-300 font-semibold">
-              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-              <span>Razorpay Checkout Opened in New Tab</span>
-            </div>
-            <a
-              href={activeShortUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xs font-bold inline-flex items-center space-x-1.5 shadow"
-            >
-              <span>Click to Reopen Razorpay</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
-          <p className="text-slate-300 text-[11px] leading-relaxed">
-            In Razorpay, select <strong>UPI</strong> and enter <code className="text-amber-300 bg-black/40 px-1.5 py-0.5 rounded font-mono font-bold">failure@razorpay</code> to trigger the test decline. As soon as the transaction fails, the failure reason pop-up will appear automatically.
-          </p>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Form: Customer & Shipping & Payment */}
         <div className="lg:col-span-7 space-y-6">
@@ -322,51 +324,50 @@ function CheckoutContent() {
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors font-mono"
                 />
               </div>
             </div>
           </div>
 
-          {/* Shipping Address */}
+          {/* Shipping Address Card */}
           <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 shadow-lg">
             <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-800">
               <MapPin className="w-5 h-5 text-amber-400" />
-              <h2 className="text-base font-semibold text-white">Delivery Address</h2>
+              <h2 className="text-base font-semibold text-white">White-Glove Delivery Address</h2>
             </div>
-            <div className="text-xs space-y-1.5">
-              <label className="text-slate-400 block font-medium">White-Glove Delivery Location</label>
+            <div className="space-y-1.5 text-xs">
+              <label className="text-slate-400 block font-medium">Address & Landmark</label>
               <textarea
-                rows={2}
+                rows={3}
                 value={shippingAddress}
                 onChange={(e) => setShippingAddress(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors resize-none"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-amber-500 transition-colors"
               />
             </div>
           </div>
 
-          {/* Payment Method Selection */}
+          {/* Payment Method Selector */}
           <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 shadow-lg">
             <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-800">
               <CreditCard className="w-5 h-5 text-amber-400" />
-              <h2 className="text-base font-semibold text-white">Select Payment Method</h2>
+              <h2 className="text-base font-semibold text-white">Payment Method</h2>
             </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <button
                 type="button"
                 onClick={() => setPaymentMethod("UPI")}
                 className={`p-4 rounded-2xl border text-left flex items-start space-x-3 transition-all ${
                   paymentMethod === "UPI"
-                    ? "bg-amber-500/10 border-amber-500/50 text-white"
-                    : "bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700"
+                    ? "bg-amber-500/10 border-amber-500 text-white"
+                    : "bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700"
                 }`}
               >
-                <QrCode className="w-5 h-5 text-amber-400 mt-0.5" />
+                <QrCode className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-semibold text-white">UPI / QR (Recommended)</div>
+                  <div className="font-semibold text-slate-200">UPI / QR (Recommended)</div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    GPay, PhonePe, Paytm & any UPI app
+                    Google Pay, PhonePe, Paytm, or UPI ID
                   </div>
                 </div>
               </button>
@@ -376,15 +377,15 @@ function CheckoutContent() {
                 onClick={() => setPaymentMethod("CARD")}
                 className={`p-4 rounded-2xl border text-left flex items-start space-x-3 transition-all ${
                   paymentMethod === "CARD"
-                    ? "bg-amber-500/10 border-amber-500/50 text-white"
-                    : "bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700"
+                    ? "bg-amber-500/10 border-amber-500 text-white"
+                    : "bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700"
                 }`}
               >
-                <CreditCard className="w-5 h-5 text-amber-400 mt-0.5" />
+                <CreditCard className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-semibold text-white">Credit / Debit Card</div>
+                  <div className="font-semibold text-slate-200">Credit / Debit Card</div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    Visa, Mastercard, RuPay & Amex
+                    Visa, Mastercard, RuPay, Amex
                   </div>
                 </div>
               </button>
@@ -451,11 +452,11 @@ function CheckoutContent() {
                 <p className="font-semibold text-white">For the failed-payment test:</p>
                 <ol className="list-decimal list-inside space-y-1 text-slate-300 pt-0.5">
                   <li>Click Place Order</li>
-                  <li>Razorpay hosted checkout opens</li>
+                  <li>Razorpay Standard Checkout modal opens</li>
                   <li>Select UPI</li>
                   <li>Enter: <code className="text-amber-300 bg-black/60 px-1.5 py-0.5 rounded font-mono font-bold select-all">failure@razorpay</code></li>
                   <li>Complete the test payment attempt</li>
-                  <li>Razorpay should report PAYMENT FAILED</li>
+                  <li>Razorpay reports PAYMENT FAILED with actual decline reason</li>
                 </ol>
               </div>
               <p className="text-[10px] text-slate-400 pt-1 border-t border-blue-500/20">
@@ -485,7 +486,7 @@ function CheckoutContent() {
 
               <div className="text-center">
                 <span className="text-[11px] font-mono text-slate-400">
-                  Redirects to official Razorpay hosted checkout • 256-Bit SSL
+                  Opens official Razorpay Standard Checkout • 256-Bit SSL
                 </span>
               </div>
             </div>
@@ -493,7 +494,7 @@ function CheckoutContent() {
             <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-start space-x-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong>Official Gateway:</strong> All payments processed securely on Razorpay&apos;s hosted PCI-DSS Level 1 certified platform.
+                <strong>Official Gateway:</strong> Powered by Razorpay Standard Checkout (`checkout.js`) with Orders API.
               </span>
             </div>
           </div>

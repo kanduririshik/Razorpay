@@ -21,6 +21,7 @@ function PaymentFailedContent() {
   const paymentId = searchParams.get("paymentId") || "PAY98231";
   const orderId = searchParams.get("orderId") || "RA98231";
   const queryReason = searchParams.get("reason");
+  const rzpPaymentId = searchParams.get("razorpayPaymentId") || "";
 
   const [isModalOpen, setIsModalOpen] = useState(true);
 
@@ -33,8 +34,11 @@ function PaymentFailedContent() {
     queryReason ||
     order?.failureReason ||
     paymentQuery?.payment.failureReason ||
-    "Payment was declined by the bank";
-  const method = order?.paymentMethod || paymentQuery?.payment.method || "UPI";
+    "Payment failed";
+  const actualRazorpayPaymentId =
+    rzpPaymentId ||
+    paymentQuery?.payment.razorpayPaymentId ||
+    "pay_test_declined";
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-14">
@@ -89,12 +93,17 @@ function PaymentFailedContent() {
           </div>
 
           <div className="flex justify-between pb-2 border-b border-slate-800">
+            <span className="text-slate-500">Razorpay Payment ID</span>
+            <span className="font-semibold text-slate-300 truncate max-w-[200px]">{actualRazorpayPaymentId}</span>
+          </div>
+
+          <div className="flex justify-between pb-2 border-b border-slate-800">
             <span className="text-slate-500">Original Order Value</span>
             <span className="font-bold text-white text-sm">{formatINR(amount)}</span>
           </div>
 
           <div className="flex justify-between pb-2 border-b border-slate-800">
-            <span className="text-slate-500">Actual Test Transaction</span>
+            <span className="text-slate-500">Actual Test Gateway Transaction</span>
             <span className="font-semibold text-blue-300">₹1,000</span>
           </div>
 
@@ -106,21 +115,21 @@ function PaymentFailedContent() {
           <div className="flex justify-between items-start pt-1">
             <span className="text-slate-500">Failure Reason</span>
             <div className="text-right max-w-[220px]">
-              <span className="px-2.5 py-1 rounded bg-red-500/20 text-red-300 font-semibold border border-red-500/30 inline-block">
+              <span className="px-2.5 py-1 rounded bg-red-500/20 text-red-300 font-semibold border border-red-500/30 inline-block break-words">
                 {failureReason}
               </span>
             </div>
           </div>
         </div>
 
-        {/* RecoverAI Autonomous System Notice */}
+        {/* System Notice */}
         <div className="max-w-md mx-auto p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-left space-y-2">
           <div className="flex items-center space-x-2 text-amber-400 font-semibold">
             <ShieldAlert className="w-4 h-4" />
-            <span>RecoverAI Telemetry Active</span>
+            <span>Order Recovery Active</span>
           </div>
           <p className="text-slate-300 text-[11px] leading-relaxed">
-            RecoverAI has detected the failed payment and is preparing a recovery action. The failure payload has been synchronized with the Merchant Command Center.
+            Your payment attempt was unsuccessful. Our system has detected the issue and your order remains available for recovery.
           </p>
         </div>
 
