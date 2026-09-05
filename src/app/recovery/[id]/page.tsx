@@ -83,7 +83,7 @@ export default function CustomerRecoveryPage() {
         throw new Error(orderData.error || "Failed to create Razorpay recovery order.");
       }
 
-      // 3. Initialize Razorpay Standard Checkout modal
+      // 3. Initialize Razorpay Standard Checkout modal — UPI ONLY for recovery
       const options: RazorpayCheckoutOptions = {
         key: orderData.keyId,
         amount: orderData.amount, // 100000 paise = ₹1,000
@@ -97,6 +97,23 @@ export default function CustomerRecoveryPage() {
           contact: "9820145892",
           method: "upi",
           vpa: "success@razorpay", // Razorpay Test Mode: UPI VPA that always succeeds
+        },
+        // CRITICAL: Restrict to UPI only — hides Netbanking/Card/Wallet so user cannot accidentally fail
+        config: {
+          display: {
+            blocks: {
+              upi_block: {
+                name: "Pay via UPI",
+                instruments: [
+                  { method: "upi" }
+                ],
+              },
+            },
+            sequence: ["block.upi_block"],
+            preferences: {
+              show_default_blocks: false, // Hides Netbanking, Card, Wallet
+            },
+          },
         },
         notes: {
           orderId,

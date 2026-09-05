@@ -57,6 +57,27 @@ export interface RazorpayCheckoutOptions {
     confirm_close?: boolean;
     animation?: boolean;
   };
+  /**
+   * Restrict which payment methods are displayed in the Razorpay modal.
+   * Use this to hide all methods except UPI on the recovery page.
+   */
+  config?: {
+    display?: {
+      blocks?: Record<string, {
+        name?: string;
+        instruments?: Array<{
+          method?: string;
+          flows?: string[];
+          [key: string]: unknown;
+        }>;
+      }>;
+      sequence?: string[];
+      preferences?: {
+        show_default_blocks?: boolean;
+        [key: string]: unknown;
+      };
+    };
+  };
 }
 
 declare global {
