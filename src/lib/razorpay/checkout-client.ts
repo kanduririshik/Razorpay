@@ -173,9 +173,9 @@ function installRazorpayNetworkBridge() {
       ...rest: any[]
     ) {
       let strUrl = typeof url === "string" ? url : url.toString();
-      if (strUrl.includes("lumberjack.razorpay.com")) {
-        // Redirect telemetry to safe local 204
-        strUrl = `${origin}/api/razorpay/status`;
+      if (strUrl.includes("lumberjack.razorpay.com") || strUrl.includes("lumberjack-")) {
+        // Silently drop telemetry — redirect to a no-op local route that accepts any method
+        strUrl = `${origin}/api/razorpay/noop`;
       } else if (strUrl.startsWith("https://api.razorpay.com/")) {
         strUrl = strUrl.replace("https://api.razorpay.com/", `${origin}/`);
       }

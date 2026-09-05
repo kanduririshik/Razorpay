@@ -7,6 +7,10 @@ const nextConfig = {
         source: "/v1/:path*",
         destination: "https://api.razorpay.com/v1/:path*",
       },
+      {
+        source: "/v2/:path*",
+        destination: "https://api.razorpay.com/v2/:path*",
+      },
     ];
   },
 };
